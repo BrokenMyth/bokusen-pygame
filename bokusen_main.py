@@ -39,6 +39,7 @@ pygame.display.set_caption("BOKUSEN")
 screen = pygame.display.set_mode(GAME_SIZE, 0, 32)
 game_font = pygame.font.Font('msgothic.ttc',50)
 text_font = pygame.font.Font('msgothic.ttc',30)
+small_text_font = pygame.font.Font('msgothic.ttc',15)
 all_text_rect = pygame.Rect(30, 550, 930, 200)
 
 
@@ -417,17 +418,38 @@ class GridItem:
         pygame.draw.rect(screen, self.bg_color, bg_rect, 0)
         pygame.draw.rect(screen, self.border_color, bg_rect, 2)
 
-        img_height = self.rect[3] - 30
+        text_area_height = 25
+        img_area_height = self.rect[3] - text_area_height
+
         if self.cover_img:
-            scaled_img = pygame.transform.scale(self.cover_img, (self.rect[2], img_height))
-            screen.blit(scaled_img, (self.rect[0], self.rect[1]))
+            aspect_ratio = 960 / 540
+            img_width = int(img_area_height * aspect_ratio)
+
+            if img_width > self.rect[2]:
+                img_width = self.rect[2]
+                img_height = int(img_width / aspect_ratio)
+            else:
+                img_height = img_area_height
+
+            scaled_img = pygame.transform.scale(self.cover_img, (img_width, img_height))
+            img_x = self.rect[0] + (self.rect[2] - img_width) // 2
+            img_y = self.rect[1]
+            screen.blit(scaled_img, (img_x, img_y))
         else:
-            img_rect = pygame.Rect(self.rect[0], self.rect[1], self.rect[2], img_height)
+            img_width = int(img_area_height * (960 / 540))
+            if img_width > self.rect[2]:
+                img_width = self.rect[2]
+                img_height = int(img_width / (960 / 540))
+            else:
+                img_height = img_area_height
+
+            img_x = self.rect[0] + (self.rect[2] - img_width) // 2
+            img_rect = pygame.Rect(img_x, self.rect[1], img_width, img_height)
             pygame.draw.rect(screen, (30, 30, 30), img_rect, 0)
 
-        text_surface = text_font.render(self.text, True, self.text_color)
+        text_surface = small_text_font.render(self.text, True, self.text_color)
         text_rect = text_surface.get_rect(centerx=self.rect[0] + self.rect[2] // 2,
-                                        centery=self.rect[1] + self.rect[3] - 15)
+                                        centery=self.rect[1] + self.rect[3] - text_area_height // 2)
         screen.blit(text_surface, text_rect)
 
     def in_rect(self, x, y):
@@ -513,23 +535,23 @@ def get_list():
         json_list.append(file.replace('.json',''))
     return json_list
 
-#列表分页 - 改为每页20个项目（4x5网格）
+#列表分页 - 改为每页12个项目（3x4网格）
 def page_list(p,page_list):
     new_list=[]
     list_len = len(json_list)
     i=0
-    while (i<20) and (p*20+i <list_len):
-        new_list.append(page_list[p*20+i])
+    while (i<12) and (p*12+i <list_len):
+        new_list.append(page_list[p*12+i])
         i= i+1
     return new_list
 
-#显示网格列表 - 4x5网格布局（适配1280x720）
+#显示网格列表 - 3x4网格布局（适配1280x720）
 def load_grid(json_list):
-    grid_cols = 4
-    grid_rows = 5
-    item_width = 280
-    item_height = 100
-    gap_x = 20
+    grid_cols = 3
+    grid_rows = 4
+    item_width = 350
+    item_height = 130
+    gap_x = 30
     gap_y = 15
 
     grid_total_width = grid_cols * item_width + (grid_cols - 1) * gap_x
@@ -553,6 +575,64 @@ def load_grid(json_list):
 
     return grid_list
 
+#显示页码信息
+def show_page_info(current_page, total_pages):
+    if total_pages <= 1:
+        return []
+
+    page_buttons = []
+    button_width = 30
+    button_height = 25
+    button_gap = 5
+
+    max_visible_pages = 12
+
+    pages_to_show = []
+    if total_pages <= max_visible_pages:
+        pages_to_show = list(range(total_pages))
+    else:
+        if current_page < max_visible_pages // 2:
+            pages_to_show = list(range(max_visible_pages - 1)) + [total_pages - 1]
+        elif current_page >= total_pages - max_visible_pages // 2:
+            pages_to_show = [0] + list(range(total_pages - max_visible_pages + 1, total_pages))
+        else:
+            half = max_visible_pages // 2
+            pages_to_show = [0] + list(range(current_page - half + 1, current_page + half)) + [total_pages - 1]
+
+    total_width = len(pages_to_show) * (button_width + button_gap)
+    start_x = (display_width - total_width) // 2
+    page_y = 600
+
+    idx = 0
+    for i in pages_to_show:
+        is_ellipsis = False
+
+        if idx > 0 and pages_to_show[idx - 1] is not None and i - pages_to_show[idx - 1] > 1:
+            ellipsis_x = start_x + idx * (button_width + button_gap)
+            ellipsis_text = small_text_font.render("...", True, (200, 200, 200))
+            ellipsis_rect = ellipsis_text.get_rect(centerx=ellipsis_x + button_width // 2,
+                                                  centery=page_y + button_height // 2)
+            screen.blit(ellipsis_text, ellipsis_rect)
+            idx += 1
+
+        x = start_x + idx * (button_width + button_gap)
+        rect = (x, page_y, button_width, button_height)
+
+        if i == current_page:
+            btn_color = (100, 100, 255)
+        else:
+            btn_color = (70, 70, 70)
+
+        page_btn = Button(rect, str(i + 1))
+        page_btn.button_color = btn_color
+        page_btn.text_color = (255, 255, 255)
+        page_btn.page_index = i
+        page_btn.show_button()
+        page_buttons.append(page_btn)
+        idx += 1
+
+    return page_buttons
+
 
 
 #数据
@@ -560,7 +640,7 @@ json_file_name = ""
 jsonfile ={} #get_json(json_file_name)
 commands = []#get_commands(jsonfile)
 json_list = get_list()
-pages_size = math.ceil(len(json_list)/20)
+pages_size = math.ceil(len(json_list)/12)
 
 
 
@@ -577,20 +657,23 @@ json_selected = False
 bgm_channel = pygame.mixer.Channel(1)
 bgm_channel.set_volume(bgm音量)
 
-buttons_start_y = 620
-button_width = 120
-button_height = 40
-button_gap = 20
-buttons_center_x = display_width // 2
+buttons_start_y = 600
+button_width = 80
+button_height = 25
+button_gap = 10
 
-pages_up_rect = (buttons_center_x - button_width - button_gap, buttons_start_y, button_width, button_height)
-page_down_rect = (buttons_center_x + button_gap, buttons_start_y, button_width, button_height)
-load_rect = (buttons_center_x - button_width - button_gap, buttons_start_y + button_height + button_gap, button_width, button_height)
-play_rect = (buttons_center_x + button_gap, buttons_start_y + button_height + button_gap, button_width, button_height)
+# 左下角按钮
+left_x = 50
+right_x = display_width - 50 - button_width
+
+pages_down_rect = (left_x, buttons_start_y, button_width, button_height)
+pages_up_rect = (right_x, buttons_start_y, button_width, button_height)
+load_rect = (left_x, buttons_start_y + button_height + button_gap, button_width, button_height)
+play_rect = (right_x, buttons_start_y + button_height + button_gap, button_width, button_height)
 
 
 pages_up_button = Button(pages_up_rect,"下一页")
-pages_down_button = Button(page_down_rect,"上一页")
+pages_down_button = Button(pages_down_rect,"上一页")
 load_button = Button(load_rect,"load")
 play_button = Button(play_rect,"play")
 
@@ -627,14 +710,15 @@ if __name__ == '__main__':
                 new_list = page_list(json_list_page,json_list)
                 json_grid_list = load_grid(new_list)
 
-                pages_up_button.show_button()
-                pages_down_button.show_button()
+                if pages_size > 1:
+                    pages_up_button.show_button()
+                    pages_down_button.show_button()
+                    page_buttons = show_page_info(json_list_page, pages_size)
 
                 if event.type == MOUSEBUTTONDOWN:
                     x = event.pos[0]
                     y = event.pos[1]
                     print(json_list_page)
-
 
                     for item in json_grid_list:
                         if item.in_rect(x,y):
@@ -646,19 +730,27 @@ if __name__ == '__main__':
 
                             print(item.text)
 
-                    if pages_up_button.in_rect(x,y):
-                        json_list_page = json_list_page + 1
-                        if json_list_page >= pages_size:
-                            json_list_page = 0
-                        new_list = page_list(json_list_page,json_list)
-                        json_grid_list = load_grid(new_list)
+                    if pages_size > 1:
+                        if pages_up_button.in_rect(x,y):
+                            json_list_page = json_list_page + 1
+                            if json_list_page >= pages_size:
+                                json_list_page = 0
+                            new_list = page_list(json_list_page,json_list)
+                            json_grid_list = load_grid(new_list)
 
-                    if pages_down_button.in_rect(x,y):
-                        json_list_page = json_list_page - 1
-                        if json_list_page < 0 :
-                            json_list_page = pages_size-1
-                        new_list = page_list(json_list_page,json_list)
-                        json_grid_list = load_grid(new_list)
+                        if pages_down_button.in_rect(x,y):
+                            json_list_page = json_list_page - 1
+                            if json_list_page < 0 :
+                                json_list_page = pages_size-1
+                            new_list = page_list(json_list_page,json_list)
+                            json_grid_list = load_grid(new_list)
+
+                        if 'page_buttons' in locals():
+                            for page_btn in page_buttons:
+                                if page_btn.in_rect(x, y):
+                                    json_list_page = page_btn.page_index
+                                    new_list = page_list(json_list_page,json_list)
+                                    json_grid_list = load_grid(new_list)
             
             if event.type == QUIT:
                 exit()
