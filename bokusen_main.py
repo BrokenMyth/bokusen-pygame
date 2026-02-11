@@ -402,11 +402,13 @@ class GridItem:
     cover_img=None
     bg_color=(50, 50, 50)
     border_color=(100, 100, 100)
+    is_selected=False
 
     def __init__(self, rect, text, cover_img=None):
         self.rect = rect
         self.text = text
         self.cover_img = cover_img
+        self.is_selected = False
 
     def set_rect(self,r):
         self.rect = r
@@ -417,12 +419,21 @@ class GridItem:
     def set_cover_img(self,img):
         self.cover_img = img
 
+    def set_selected(self, selected):
+        self.is_selected = selected
+
     def show_item(self):
         self.is_item_on_screen= True
 
         bg_rect = (self.rect[0]-2, self.rect[1]-2, self.rect[2]+4, self.rect[3]+4)
-        pygame.draw.rect(screen, self.bg_color, bg_rect, 0)
-        pygame.draw.rect(screen, self.border_color, bg_rect, 2)
+
+        # 根据选中状态改变颜色
+        if self.is_selected:
+            pygame.draw.rect(screen, (80, 80, 120), bg_rect, 0)
+            pygame.draw.rect(screen, (100, 150, 255), bg_rect, 3)
+        else:
+            pygame.draw.rect(screen, self.bg_color, bg_rect, 0)
+            pygame.draw.rect(screen, self.border_color, bg_rect, 2)
 
         text_area_height = 25
         img_area_height = self.rect[3] - text_area_height
@@ -683,16 +694,29 @@ pages_down_button = Button(pages_down_rect,"Prev")
 load_button = Button(load_rect,"load")
 play_button = Button(play_rect,"play")
 
+# 跟踪当前选中的GridItem
+selected_grid_item = None
+
+# 初始化网格列表（在循环外部）
+json_grid_list = []
+page_buttons = []
+
+
+
 
 if __name__ == '__main__':
+    # 初始化第一页的网格
+    new_list = page_list(json_list_page,json_list)
+    json_grid_list = load_grid(new_list)
+
     while True:
-    
+
         for event in pygame.event.get():
             if is_play:
 
                 if event.type == MOUSEBUTTONDOWN:
                     pygame.draw.rect(screen, (0, 0, 0), all_text_rect)
-                
+
                     read_commands(jsonfile,commands_count)
 
             if json_selected:
@@ -706,15 +730,19 @@ if __name__ == '__main__':
                     if load_button.in_rect(x,y):
                         get_resource(json_file_name)
                     if play_button.in_rect(x,y):
+                        # 播放时取消选中
+                        if selected_grid_item:
+                            selected_grid_item.set_selected(False)
+                            selected_grid_item = None
                         is_play = True
                         json_selected = False
                         is_main = False
                         screen.fill((0,0,0))
-                        
 
             if is_main:
-                new_list = page_list(json_list_page,json_list)
-                json_grid_list = load_grid(new_list)
+                # 显示网格列表（不再每次循环都重新创建）
+                for item in json_grid_list:
+                    item.show_item()
 
                 if pages_size > 1:
                     pages_up_button.show_button()
@@ -728,19 +756,41 @@ if __name__ == '__main__':
 
                     for item in json_grid_list:
                         if item.in_rect(x,y):
-                            json_file_name = item.text
-                            jsonfile = get_json(json_file_name)
-                            commands = get_commands(jsonfile)
+                            # 如果点击的是已经选中的项，直接播放
+                            if selected_grid_item == item:
+                                json_file_name = item.text
+                                jsonfile = get_json(json_file_name)
+                                commands = get_commands(jsonfile)
 
-                            json_selected = True
+                                is_play = True
+                                json_selected = False
+                                is_main = False
+                                selected_grid_item = None
+                                screen.fill((0,0,0))
+                                print(f"直接播放: {item.text}")
+                            else:
+                                # 取消之前选中的项
+                                if selected_grid_item:
+                                    selected_grid_item.set_selected(False)
 
-                            print(item.text)
+                                # 选中当前项
+                                item.set_selected(True)
+                                selected_grid_item = item
+                                json_file_name = item.text
+                                jsonfile = get_json(json_file_name)
+                                commands = get_commands(jsonfile)
+                                json_selected = True
+                                print(f"选中: {item.text}")
 
                     if pages_size > 1:
                         if pages_up_button.in_rect(x,y):
                             json_list_page = json_list_page + 1
                             if json_list_page >= pages_size:
                                 json_list_page = 0
+                            # 翻页时取消选中
+                            if selected_grid_item:
+                                selected_grid_item.set_selected(False)
+                                selected_grid_item = None
                             new_list = page_list(json_list_page,json_list)
                             json_grid_list = load_grid(new_list)
 
@@ -748,6 +798,10 @@ if __name__ == '__main__':
                             json_list_page = json_list_page - 1
                             if json_list_page < 0 :
                                 json_list_page = pages_size-1
+                            # 翻页时取消选中
+                            if selected_grid_item:
+                                selected_grid_item.set_selected(False)
+                                selected_grid_item = None
                             new_list = page_list(json_list_page,json_list)
                             json_grid_list = load_grid(new_list)
 
@@ -755,6 +809,10 @@ if __name__ == '__main__':
                             for page_btn in page_buttons:
                                 if page_btn.in_rect(x, y):
                                     json_list_page = page_btn.page_index
+                                    # 翻页时取消选中
+                                    if selected_grid_item:
+                                        selected_grid_item.set_selected(False)
+                                        selected_grid_item = None
                                     new_list = page_list(json_list_page,json_list)
                                     json_grid_list = load_grid(new_list)
             
