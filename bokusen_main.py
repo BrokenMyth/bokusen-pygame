@@ -40,6 +40,7 @@ screen = pygame.display.set_mode(GAME_SIZE, 0, 32)
 game_font = pygame.font.Font('msgothic.ttc',50)
 text_font = pygame.font.Font('msgothic.ttc',30)
 small_text_font = pygame.font.Font('msgothic.ttc',15)
+button_font = pygame.font.Font('msgothic.ttc',15)
 all_text_rect = pygame.Rect(30, 550, 930, 200)
 
 
@@ -378,10 +379,15 @@ class Button:
 
     def show_button(self):
         self.is_button_on_screen= True
-        button_text = game_font.render(self.text, True, self.text_color, (0, 0, 0))
+        # 使用更小的字体（15px，缩小一半）
+        button_text = button_font.render(self.text, True, self.text_color, self.button_color)
         li_rect = (self.rect[0]-1,self.rect[1]-1,self.rect[2]+2,self.rect[3]+2)
         pygame.draw.rect(screen, self.button_color, li_rect, 0)
-        screen.blit(button_text, self.rect)
+
+        # 计算文本居中位置
+        text_rect = button_text.get_rect(center=(self.rect[0] + self.rect[2]//2,
+                                                self.rect[1] + self.rect[3]//2))
+        screen.blit(button_text, text_rect)
 
     def in_rect(self, x, y):
         inx = (x>self.rect[0]) and (x<(self.rect[0]+self.rect[2]))
@@ -672,8 +678,8 @@ load_rect = (left_x, buttons_start_y + button_height + button_gap, button_width,
 play_rect = (right_x, buttons_start_y + button_height + button_gap, button_width, button_height)
 
 
-pages_up_button = Button(pages_up_rect,"下一页")
-pages_down_button = Button(pages_down_rect,"上一页")
+pages_up_button = Button(pages_up_rect,"Next")
+pages_down_button = Button(pages_down_rect,"Prev")
 load_button = Button(load_rect,"load")
 play_button = Button(play_rect,"play")
 
