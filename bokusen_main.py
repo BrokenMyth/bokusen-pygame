@@ -714,7 +714,7 @@ if __name__ == '__main__':
         for event in pygame.event.get():
             if is_play:
 
-                if event.type == MOUSEBUTTONDOWN:
+                if event.type == MOUSEBUTTONDOWN and event.button == 1:
                     pygame.draw.rect(screen, (0, 0, 0), all_text_rect)
 
                     read_commands(jsonfile,commands_count)
@@ -723,7 +723,7 @@ if __name__ == '__main__':
                 load_button.show_button()
                 play_button.show_button()
 
-                if event.type == MOUSEBUTTONDOWN:
+                if event.type == MOUSEBUTTONDOWN and event.button == 1:
                     x = event.pos[0]
                     y = event.pos[1]
 
@@ -749,7 +749,7 @@ if __name__ == '__main__':
                     pages_down_button.show_button()
                     page_buttons = show_page_info(json_list_page, pages_size)
 
-                if event.type == MOUSEBUTTONDOWN:
+                if event.type == MOUSEBUTTONDOWN and event.button == 1:
                     x = event.pos[0]
                     y = event.pos[1]
                     print(json_list_page)
@@ -815,11 +815,8 @@ if __name__ == '__main__':
                                         selected_grid_item = None
                                     new_list = page_list(json_list_page,json_list)
                                     json_grid_list = load_grid(new_list)
-            
+
             if event.type == QUIT:
                 exit()
-            if event.type == MOUSEBUTTONDOWN:
-                
-                pass
 
         pygame.display.flip()         
