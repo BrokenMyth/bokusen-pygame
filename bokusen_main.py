@@ -284,7 +284,7 @@ def get_resource(json_file_name):
 
     print("你先别急")
     start_time = time.time()
-    with open("./json/"+json_file_name+".json",'r') as load_f:     
+    with open("./json/"+json_file_name+".json",'r') as load_f:
         bokujson = json.load(load_f)
         images = bokujson['data']['code']['images']
         sounds = bokujson['data']['code']['sounds']
@@ -314,6 +314,33 @@ def get_resource(json_file_name):
     run_time = end_time - start_time
     print(f"耗时：{run_time}秒")
     print("下好了，开冲！")
+
+def get_cover_image(json_name):
+    try:
+        resource_path = "./resource/"+json_name+"/images/"
+        if not os.path.exists(resource_path):
+            return None
+
+        file_names = os.listdir(resource_path)
+        pattern = re.compile(r"^(\d+)\..*")
+        matching_files = [f for f in file_names if pattern.match(f)]
+
+        if not matching_files:
+            return None
+
+        max_num = -1
+        cover_file = None
+        for f in matching_files:
+            num = int(pattern.match(f).group(1))
+            if num > max_num:
+                max_num = num
+                cover_file = f
+
+        if cover_file:
+            return pygame.image.load(resource_path + cover_file).convert_alpha()
+        return None
+    except:
+        return None
 
 class Button:
     is_button_on_screen = False
@@ -354,6 +381,54 @@ class Button:
         li_rect = (self.rect[0]-1,self.rect[1]-1,self.rect[2]+2,self.rect[3]+2)
         pygame.draw.rect(screen, self.button_color, li_rect, 0)
         screen.blit(button_text, self.rect)
+
+    def in_rect(self, x, y):
+        inx = (x>self.rect[0]) and (x<(self.rect[0]+self.rect[2]))
+        iny = (y>self.rect[1]) and (y<(self.rect[1]+self.rect[3]))
+        return inx and iny
+
+class GridItem:
+    is_item_on_screen = False
+    rect=(0,0,0,0)
+    text=0
+    text_color = (255, 255, 255)
+    cover_img=None
+    bg_color=(50, 50, 50)
+    border_color=(100, 100, 100)
+
+    def __init__(self, rect, text, cover_img=None):
+        self.rect = rect
+        self.text = text
+        self.cover_img = cover_img
+
+    def set_rect(self,r):
+        self.rect = r
+
+    def set_text(self,t):
+        self.text = t
+
+    def set_cover_img(self,img):
+        self.cover_img = img
+
+    def show_item(self):
+        self.is_item_on_screen= True
+
+        bg_rect = (self.rect[0]-2, self.rect[1]-2, self.rect[2]+4, self.rect[3]+4)
+        pygame.draw.rect(screen, self.bg_color, bg_rect, 0)
+        pygame.draw.rect(screen, self.border_color, bg_rect, 2)
+
+        img_height = self.rect[3] - 30
+        if self.cover_img:
+            scaled_img = pygame.transform.scale(self.cover_img, (self.rect[2], img_height))
+            screen.blit(scaled_img, (self.rect[0], self.rect[1]))
+        else:
+            img_rect = pygame.Rect(self.rect[0], self.rect[1], self.rect[2], img_height)
+            pygame.draw.rect(screen, (30, 30, 30), img_rect, 0)
+
+        text_surface = text_font.render(self.text, True, self.text_color)
+        text_rect = text_surface.get_rect(centerx=self.rect[0] + self.rect[2] // 2,
+                                        centery=self.rect[1] + self.rect[3] - 15)
+        screen.blit(text_surface, text_rect)
 
     def in_rect(self, x, y):
         inx = (x>self.rect[0]) and (x<(self.rect[0]+self.rect[2]))
@@ -438,29 +513,45 @@ def get_list():
         json_list.append(file.replace('.json',''))
     return json_list
 
-#列表分页
+#列表分页 - 改为每页20个项目（4x5网格）
 def page_list(p,page_list):
     new_list=[]
     list_len = len(json_list)
     i=0
-    while (i<6) and (p*6+i <list_len):
-        new_list.append(page_list[p*6+i])
+    while (i<20) and (p*20+i <list_len):
+        new_list.append(page_list[p*20+i])
         i= i+1
     return new_list
 
-#显示列表
-def load_list(json_list):
+#显示网格列表 - 4x5网格布局（适配1280x720）
+def load_grid(json_list):
+    grid_cols = 4
+    grid_rows = 5
+    item_width = 280
+    item_height = 100
+    gap_x = 20
+    gap_y = 15
 
-    li_h = 200
-    button_list=[]
-    for li in json_list :
-        li_rect =(200,li_h,600,50)
+    grid_total_width = grid_cols * item_width + (grid_cols - 1) * gap_x
+    start_x = (display_width - grid_total_width) // 2
+    start_y = 30
+
+    grid_list = []
+    for idx, li in enumerate(json_list):
+        row = idx // grid_cols
+        col = idx % grid_cols
+
+        x = start_x + col * (item_width + gap_x)
+        y = start_y + row * (item_height + gap_y)
+        li_rect = (x, y, item_width, item_height)
+
+        cover_img = get_cover_image(li)
         li_text = li
-        li_button = Button(li_rect,li_text)
-        li_button.show_button()
-        button_list.append(li_button)
-        li_h = li_h + 50        
-    return button_list
+        li_item = GridItem(li_rect, li_text, cover_img)
+        li_item.show_item()
+        grid_list.append(li_item)
+
+    return grid_list
 
 
 
@@ -469,7 +560,7 @@ json_file_name = ""
 jsonfile ={} #get_json(json_file_name)
 commands = []#get_commands(jsonfile)
 json_list = get_list()
-pages_size = math.ceil(len(json_list)/6)
+pages_size = math.ceil(len(json_list)/20)
 
 
 
@@ -486,10 +577,16 @@ json_selected = False
 bgm_channel = pygame.mixer.Channel(1)
 bgm_channel.set_volume(bgm音量)
 
-pages_up_rect = (600,550,150,50)
-page_down_rect = (150,550,150,50)
-load_rect = (600,650,150,50)
-play_rect = (150,650,150,50)
+buttons_start_y = 620
+button_width = 120
+button_height = 40
+button_gap = 20
+buttons_center_x = display_width // 2
+
+pages_up_rect = (buttons_center_x - button_width - button_gap, buttons_start_y, button_width, button_height)
+page_down_rect = (buttons_center_x + button_gap, buttons_start_y, button_width, button_height)
+load_rect = (buttons_center_x - button_width - button_gap, buttons_start_y + button_height + button_gap, button_width, button_height)
+play_rect = (buttons_center_x + button_gap, buttons_start_y + button_height + button_gap, button_width, button_height)
 
 
 pages_up_button = Button(pages_up_rect,"下一页")
@@ -527,8 +624,8 @@ if __name__ == '__main__':
                         
 
             if is_main:
-                new_list =  page_list(json_list_page,json_list)
-                json_button_list = load_list(new_list)
+                new_list = page_list(json_list_page,json_list)
+                json_grid_list = load_grid(new_list)
 
                 pages_up_button.show_button()
                 pages_down_button.show_button()
@@ -538,30 +635,30 @@ if __name__ == '__main__':
                     y = event.pos[1]
                     print(json_list_page)
 
-                    
-                    for bt in json_button_list:
-                        if bt.in_rect(x,y):
-                            json_file_name= bt.text
+
+                    for item in json_grid_list:
+                        if item.in_rect(x,y):
+                            json_file_name = item.text
                             jsonfile = get_json(json_file_name)
                             commands = get_commands(jsonfile)
 
                             json_selected = True
 
-                            print(bt.text)
+                            print(item.text)
 
                     if pages_up_button.in_rect(x,y):
                         json_list_page = json_list_page + 1
-                        if json_list_page+1 > pages_size:
+                        if json_list_page >= pages_size:
                             json_list_page = 0
-                        new_list =  page_list(json_list_page,json_list)
-                        json_button_list = load_list(new_list)
+                        new_list = page_list(json_list_page,json_list)
+                        json_grid_list = load_grid(new_list)
 
                     if pages_down_button.in_rect(x,y):
                         json_list_page = json_list_page - 1
                         if json_list_page < 0 :
                             json_list_page = pages_size-1
-                        new_list =  page_list(json_list_page,json_list)
-                        json_button_list = load_list(new_list)
+                        new_list = page_list(json_list_page,json_list)
+                        json_grid_list = load_grid(new_list)
             
             if event.type == QUIT:
                 exit()
