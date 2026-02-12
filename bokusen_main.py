@@ -740,6 +740,9 @@ if __name__ == '__main__':
                         screen.fill((0,0,0))
 
             if is_main:
+                # 清除整个屏幕,避免内容叠加
+                screen.fill((0, 0, 0))
+
                 # 显示网格列表（不再每次循环都重新创建）
                 for item in json_grid_list:
                     item.show_item()
