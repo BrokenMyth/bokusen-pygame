@@ -617,10 +617,17 @@ class Cg_Controller():
         self.back_img = img
 
     def show_cg(self):
+        # 缩放图片到 CG_SIZE
         self.fore_img = pygame.transform.scale(self.fore_img, CG_SIZE)
         self.back_img = pygame.transform.scale(self.back_img, CG_SIZE)
-        screen.blit(self.back_img, (0,0))
-        screen.blit(self.fore_img, (0,0))
+
+        # 计算水平居中位置，垂直方向置顶
+        cg_x = (display_width - CG_SIZE[0]) // 2
+        cg_y = 0
+
+        # 在水平居中、垂直置顶位置绘制图片
+        screen.blit(self.back_img, (cg_x, cg_y))
+        screen.blit(self.fore_img, (cg_x, cg_y))
         pygame.display.flip() 
 
 class Text_Controller():
@@ -669,8 +676,12 @@ class Anime_Controller(threading.Thread):
                 img = get_images(int(self.anime_list[i]))
                 img = pygame.transform.scale(img, CG_SIZE)
 
-                screen.blit(img,(0,0))
-                pygame.display.flip() 
+                # 计算水平居中位置，垂直方向置顶
+                cg_x = (display_width - CG_SIZE[0]) // 2
+                cg_y = 0
+
+                screen.blit(img, (cg_x, cg_y))
+                pygame.display.flip()
                 time.sleep(1/self.fps)
                 i=i+1
                 if i==len(self.anime_list):
@@ -1012,14 +1023,10 @@ if __name__ == '__main__':
                     # 更新上次执行命令的时间
                     last_command_time = current_time
 
-                    # 如果场景结束或回到主菜单，停止快进
-                    if not is_play:
-                        is_fast_forward = False
-                        fast_forward_mode = False
-
-                # 显示 Skip 提示
-                skip_text = small_text_font.render("Skip", True, (255, 255, 0))
-                screen.blit(skip_text, (10, 10))
+                # 如果场景结束或回到主菜单，停止快进
+                if not is_play:
+                    is_fast_forward = False
+                    fast_forward_mode = False
             else:
                 # Ctrl 释放，停止快进
                 is_fast_forward = False
