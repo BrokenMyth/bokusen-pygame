@@ -11,6 +11,39 @@ from pydub import AudioSegment
 import math
 import concurrent.futures
 
+# 配置 ffmpeg 路径
+def configure_ffmpeg():
+    """自动检测并配置 ffmpeg 路径"""
+    # 检查常见位置
+    ffmpeg_paths = [
+        'ffmpeg.exe',  # 当前目录
+        './ffmpeg.exe',  # 当前目录
+        os.path.join(os.path.dirname(__file__), 'ffmpeg.exe'),  # 脚本所在目录
+        'C:/ffmpeg/bin/ffmpeg.exe',  # 常见安装路径
+        os.path.join(os.path.dirname(sys.executable), 'ffmpeg.exe'),  # Python 目录
+    ]
+
+    for path in ffmpeg_paths:
+        if os.path.exists(path):
+            AudioSegment.converter = path
+            print(f'找到 ffmpeg: {path}')
+            return True
+
+    # 检查系统 PATH
+    try:
+        import shutil
+        if shutil.which('ffmpeg'):
+            print('使用系统 ffmpeg')
+            return True
+    except:
+        pass
+
+    print('未找到 ffmpeg，m4a 音频将无法转换')
+    return False
+
+# 初始化时配置 ffmpeg
+ffmpeg_available = configure_ffmpeg()
+
 #用户设置
 user_setting_file =  open("settings.json",'r',encoding='utf8') 
 user_setting = json.load(user_setting_file)
@@ -81,6 +114,11 @@ def read_commands(jsonfile,num):
             
         if num == len(commands):
             global cg_control, txt_control, anime_control, sound_control, is_play, is_main, json_list_page, json_selected
+            anime_control.set_loop(False)
+            if anime_control.is_started:
+                anime_control.join()
+            se_channel.stop()  # 停止音效
+            bgm_channel.stop()  # 停止 BGM
             cg_control = Cg_Controller()
             txt_control = Text_Controller()
             anime_control = Anime_Controller()
@@ -127,11 +165,31 @@ def execut_commands(tag,param):
     if tag=="wm":
         pass
     if tag=="playse":
-        
-        sound_file = get_sounds(param[-1])
-        
-        pygame.mixer.music.load(sound_file)
-        pygame.mixer.music.play()
+
+        try:
+            sound_file = get_sounds(param[-1])
+
+            if not sound_file:
+                print('playse error: 音频文件不存在')
+                return "end"
+
+            # 检查文件格式，如果是 m4a 说明转换失败，跳过播放
+            if sound_file.endswith('.m4a'):
+                print(f'playse warning: 音频文件未转换 ({sound_file})，跳过播放')
+                return "end"
+
+            try:
+                # 使用专用音效通道，播放前停止之前的音效
+                global se_channel
+                se_channel.stop()  # 停止之前的音效
+                Sound = pygame.mixer.Sound(sound_file)
+                se_channel.play(Sound)
+            except Exception as e:
+                print(f'playse play error: {e}')
+                print(f'音频文件: {sound_file}')
+                print(f'文件存在: {os.path.exists(sound_file) if sound_file else "未知"}')
+        except Exception as e:
+            print(f'playse error: {e}')
 
     if tag=="articles":
         txt = get_articles(param[0])
@@ -166,36 +224,67 @@ def execut_commands(tag,param):
 
     if tag=="playbgm":
         print('playbgm'+param[-1])
-        sound_file = get_sounds(param[-1])
-        Sound = pygame.mixer.Sound(sound_file)
-        
+
         try:
-            if bgm_channel.get_busy():
-                print('正在播放')
-                bgm_channel.stop()
-                bgm_channel.play(Sound, loops=-1)
-            else:
-                print('没有播放')
-                bgm_channel.play(Sound, loops=-1)
-        except:
-            print('playbgm error')
+            sound_file = get_sounds(param[-1])
+
+            if not sound_file:
+                print('playbgm error: 音频文件不存在')
+                return "end"
+
+            # 检查文件格式
+            if sound_file.endswith('.m4a'):
+                print(f'playbgm warning: 音频文件未转换 ({sound_file})，跳过播放')
+                return "end"
+
+            Sound = pygame.mixer.Sound(sound_file)
+
+            try:
+                if bgm_channel.get_busy():
+                    print('正在播放')
+                    bgm_channel.stop()
+                    bgm_channel.play(Sound, loops=-1)
+                else:
+                    print('没有播放')
+                    bgm_channel.play(Sound, loops=-1)
+            except:
+                print('playbgm play error')
+        except Exception as e:
+            print(f'playbgm error: {e}')
+            print(f'音频文件: {sound_file}')
+            print(f'文件存在: {os.path.exists(sound_file) if sound_file else "未知"}')
 
         
 
     if tag=="fadeinbgm":
         print('fadeinbgm'+param[1])
 
-        sound_file = get_sounds(param[1])
-        Sound = pygame.mixer.Sound(sound_file)
-        
         try:
-            if bgm_channel.get_busy():
-                bgm_channel.stop()
-                bgm_channel.play(Sound, loops=-1)
-            else:
-                bgm_channel.play(Sound, loops=-1)
-        except:
-            print('fadeinbgm error')
+            sound_file = get_sounds(param[1])
+
+            if not sound_file:
+                print('fadeinbgm error: 音频文件不存在')
+                return "end"
+
+            # 检查文件格式
+            if sound_file.endswith('.m4a'):
+                print(f'fadeinbgm warning: 音频文件未转换 ({sound_file})，跳过播放')
+                return "end"
+
+            Sound = pygame.mixer.Sound(sound_file)
+
+            try:
+                if bgm_channel.get_busy():
+                    bgm_channel.stop()
+                    bgm_channel.play(Sound, loops=-1)
+                else:
+                    bgm_channel.play(Sound, loops=-1)
+            except:
+                print('fadeinbgm play error')
+        except Exception as e:
+            print(f'fadeinbgm error: {e}')
+            print(f'音频文件: {sound_file}')
+            print(f'文件存在: {os.path.exists(sound_file) if sound_file else "未知"}')
 
     if tag=="fadeoutbgm":
         pass
@@ -240,7 +329,7 @@ def get_images(num):
 
     return  pygame.image.load(resouce_path+matching_file_names[0]).convert_alpha()   
 
-def get_sounds(num):    
+def get_sounds(num):
     global json_file_name
     resouce_path =  "./resource/"+json_file_name+"/sounds/"
 
@@ -248,7 +337,30 @@ def get_sounds(num):
     pattern = re.compile("^"+str(num)+"\..*")
     matching_file_names = [f for f in file_names if pattern.match(f)]
 
-    return resouce_path+matching_file_names[0]
+    # 优先返回 wav 文件（转换成功的情况）
+    wav_files = [f for f in matching_file_names if f.endswith('.wav')]
+    if wav_files:
+        return resouce_path + wav_files[0]
+
+    # 如果有 m4a 文件且 ffmpeg 可用，尝试转换
+    m4a_files = [f for f in matching_file_names if f.endswith('.m4a')]
+    if m4a_files and ffmpeg_available:
+        m4a_file = resouce_path + m4a_files[0]
+        wav_file = m4a_file.replace(".m4a", ".wav")
+
+        try:
+            print(f'转换音频: {m4a_files[0]} -> wav')
+            AudioSegment.from_file(m4a_file).export(wav_file, format="wav")
+            print(f'转换成功: {wav_file}')
+            return wav_file
+        except Exception as e:
+            print(f'转换失败: {e}')
+
+    # 如果没有 wav，返回其他格式（可能是转换失败的 m4a）
+    if matching_file_names:
+        return resouce_path + matching_file_names[0]
+
+    return None
 
 def get_articles(num):    
     global jsonfile
@@ -269,12 +381,26 @@ def download_file(url, filename):
             continue
         else:
             break
+
     if 'm4a' in filename:
         wav_file = filename.replace("m4a","wav")
-        AudioSegment.from_file(filename).export(wav_file, format="wav")
-        os.remove(filename)
 
-    
+        # 检查 ffmpeg 是否可用
+        if not ffmpeg_available:
+            print(f'跳过音频转换（ffmpeg 不可用）: {filename}')
+            print(f'提示: 下载 ffmpeg.exe 并放到项目目录可启用 m4a 音频')
+            return
+
+        try:
+            AudioSegment.from_file(filename).export(wav_file, format="wav")
+            os.remove(filename)
+            print(f'音频转换成功: {wav_file}')
+        except Exception as e:
+            print(f'音频转换失败: {e}')
+            print(f'保留原文件: {filename}')
+            print(f'提示: 请确保 ffmpeg.exe 可用')
+
+
     print(f'{filename} downloaded.')
 
 
@@ -517,9 +643,11 @@ class Anime_Controller(threading.Thread):
     anime_list=[] 
     fps = 15
     loop = True
+    is_started = False
 
     def __init__(self):
         threading.Thread.__init__(self)
+        self.is_started = False
 
     def set_anime_list(self,str):
         self.anime_list = str.rstrip().split(" ")
@@ -528,6 +656,7 @@ class Anime_Controller(threading.Thread):
         self.loop = status
         
     def run(self):
+        self.is_started = True
         while self.loop:
             i = 0
             while i<len(self.anime_list):
@@ -673,6 +802,7 @@ json_list_page = 0
 json_selected = False
 bgm_channel = pygame.mixer.Channel(1)
 bgm_channel.set_volume(bgm音量)
+se_channel = pygame.mixer.Channel(2)  # 音效专用通道
 
 buttons_start_y = 600
 button_width = 80
@@ -820,6 +950,11 @@ if __name__ == '__main__':
                                     json_grid_list = load_grid(new_list)
 
             if event.type == QUIT:
+                anime_control.set_loop(False)
+                if anime_control.is_started:
+                    anime_control.join()
+                se_channel.stop()  # 停止音效
+                bgm_channel.stop()  # 停止 BGM
                 exit()
 
         pygame.display.flip()         
