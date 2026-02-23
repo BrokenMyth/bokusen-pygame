@@ -91,29 +91,34 @@ def get_commands(jsonfile):
     return commands
 
 
-def read_commands(jsonfile,num): 
+def read_commands(jsonfile,num):
         bokujson = jsonfile
         commands= get_commands(jsonfile)
 
+        global commands_count, fast_forward_mode, cg_control, txt_control, anime_control, sound_control, is_play, is_main, json_list_page, json_selected
+
         while(num<len(commands)):
-                     
+
             tags = bokujson['data']['code']['tags']
             tag = tags[int(commands[num][0])]
 
             parameters = bokujson['data']['code']['parameters']
             param = parameters[int(commands[num][1])]
 
-            result = execut_commands(tag,param)    
+            result = execut_commands(tag,param)
 
             num = num +1
 
             if result == "stop":
-                global commands_count
                 commands_count = num
                 break
-            
+
+            # 快进模式下：每帧只执行一个命令就返回
+            if fast_forward_mode:
+                commands_count = num
+                return
+
         if num == len(commands):
-            global cg_control, txt_control, anime_control, sound_control, is_play, is_main, json_list_page, json_selected
             anime_control.set_loop(False)
             if anime_control.is_started:
                 anime_control.join()
@@ -159,6 +164,7 @@ def execut_commands(tag,param):
     if tag=="trans":
         pass
     if tag=="wt":
+        # 快进模式下跳过等待
         pass
     if tag=="move":
         pass
@@ -804,6 +810,13 @@ bgm_channel = pygame.mixer.Channel(1)
 bgm_channel.set_volume(bgm音量)
 se_channel = pygame.mixer.Channel(2)  # 音效专用通道
 
+# 快进功能
+is_fast_forward = False
+fast_forward_start_time = 0
+fast_forward_commands_per_second = 20  # 每秒播放的命令数
+fast_forward_mode = False  # 标记是否处于快进模式
+last_command_time = 0  # 上次执行命令的时间
+
 buttons_start_y = 600
 button_width = 80
 button_height = 25
@@ -840,6 +853,7 @@ if __name__ == '__main__':
     json_grid_list = load_grid(new_list)
 
     while True:
+        current_time = time.time()
 
         for event in pygame.event.get():
             if is_play:
@@ -848,6 +862,17 @@ if __name__ == '__main__':
                     pygame.draw.rect(screen, (0, 0, 0), all_text_rect)
 
                     read_commands(jsonfile,commands_count)
+
+                # 检测 Ctrl 键按下
+                if event.type == KEYDOWN:
+                    if event.key in [K_LCTRL, K_RCTRL]:
+                        is_fast_forward = True
+                        fast_forward_start_time = current_time
+
+                # 检测 Ctrl 键释放
+                if event.type == KEYUP:
+                    if event.key in [K_LCTRL, K_RCTRL]:
+                        is_fast_forward = False
 
             if json_selected:
                 load_button.show_button()
@@ -956,5 +981,48 @@ if __name__ == '__main__':
                 se_channel.stop()  # 停止音效
                 bgm_channel.stop()  # 停止 BGM
                 exit()
+
+        # 快进逻辑
+        if is_play:
+            # 每帧都重新绘制 CG 和文本，让 Skip 提示被自然覆盖
+            cg_control.show_cg()
+            txt_control.show_text()
+
+            # 检查键盘状态（支持直接检测，不依赖 KEYDOWN/KEYUP）
+            keys = pygame.key.get_pressed()
+            is_ctrl_pressed = keys[K_LCTRL] or keys[K_RCTRL]
+
+            if is_ctrl_pressed:
+                if not is_fast_forward:
+                    # Ctrl 刚被按下
+                    is_fast_forward = True
+                    fast_forward_mode = True
+                    fast_forward_start_time = current_time
+                    last_command_time = current_time
+
+                # 根据时间间隔执行命令
+                time_since_last_command = current_time - last_command_time
+                command_interval = 1.0 / fast_forward_commands_per_second  # 每个命令的时间间隔
+
+                if time_since_last_command >= command_interval:
+                    # 快进模式下执行一个命令
+                    pygame.draw.rect(screen, (0, 0, 0), all_text_rect)
+                    read_commands(jsonfile, commands_count)
+
+                    # 更新上次执行命令的时间
+                    last_command_time = current_time
+
+                    # 如果场景结束或回到主菜单，停止快进
+                    if not is_play:
+                        is_fast_forward = False
+                        fast_forward_mode = False
+
+                # 显示 Skip 提示
+                skip_text = small_text_font.render("Skip", True, (255, 255, 0))
+                screen.blit(skip_text, (10, 10))
+            else:
+                # Ctrl 释放，停止快进
+                is_fast_forward = False
+                fast_forward_mode = False
 
         pygame.display.flip()         
