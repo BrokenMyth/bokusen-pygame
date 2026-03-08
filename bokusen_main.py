@@ -122,7 +122,7 @@ def get_json(json_file_name):
         print(f"提示：请重新下载该资源")
         with error_message['lock']:
             error_message['active'] = True
-            error_message['message'] = f"JSON format error: {json_file_name}.json. Please click 'load' to download resources."
+            error_message['message'] = f"JSON format error. Please click 'load' to download."
         return None
     except Exception as e:
         print(f"错误：加载 JSON 文件失败 {json_path}")
@@ -205,7 +205,7 @@ def execut_commands(tag,param):
                 # 显示错误提示
                 with error_message['lock']:
                     error_message['active'] = True
-                    error_message['message'] = f"Resources not found. Please click 'load' to download resources."
+                    error_message['message'] = f"Please click 'load' to download."
                 # 停止播放并返回主菜单
                 is_play = False
                 is_main = True
@@ -266,7 +266,7 @@ def execut_commands(tag,param):
                 # 显示错误提示
                 with error_message['lock']:
                     error_message['active'] = True
-                    error_message['message'] = f"Resources not found. Please click 'load' to download resources."
+                    error_message['message'] = f"Please click 'load' to download."
                 # 停止播放并返回主菜单
                 is_play = False
                 is_main = True
@@ -344,7 +344,7 @@ def execut_commands(tag,param):
                 # 显示错误提示
                 with error_message['lock']:
                     error_message['active'] = True
-                    error_message['message'] = f"Resources not found. Please click 'load' to download resources."
+                    error_message['message'] = f"Please click 'load' to download."
                 # 停止播放并返回主菜单
                 is_play = False
                 is_main = True
@@ -391,7 +391,7 @@ def execut_commands(tag,param):
                 # 显示错误提示
                 with error_message['lock']:
                     error_message['active'] = True
-                    error_message['message'] = f"Resources not found. Please click 'load' to download resources."
+                    error_message['message'] = f"Please click 'load' to download."
                 # 停止播放并返回主菜单
                 is_play = False
                 is_main = True
@@ -908,7 +908,7 @@ def get_resource(json_file_name):
             # JSON文件损坏，显示错误提示
             with error_message['lock']:
                 error_message['active'] = True
-                error_message['message'] = f"JSON file corrupted: {json_file_name}.json. Please redownload from server."
+                error_message['message'] = f"JSON file corrupted. Please click 'load' to redownload."
 
 def get_cover_image(json_name):
     try:
@@ -1405,6 +1405,37 @@ if __name__ == '__main__':
                                 if jsonfile is None:
                                     print(f"无法加载 {json_file_name}，请先点击 'load' 下载资源")
                                     continue
+
+                                # 检查资源目录是否存在
+                                resource_path = "./resource/" + json_file_name
+                                images_path = resource_path + "/images/"
+                                sounds_path = resource_path + "/sounds/"
+
+                                if not os.path.exists(images_path) or not os.path.exists(sounds_path):
+                                    # 资源目录不存在，显示错误提示
+                                    with error_message['lock']:
+                                        error_message['active'] = True
+                                        error_message['message'] = f"Please click 'load' to download."
+                                    continue
+
+                                # 检查images和sounds目录是否为空
+                                try:
+                                    images_files = os.listdir(images_path) if os.path.exists(images_path) else []
+                                    sounds_files = os.listdir(sounds_path) if os.path.exists(sounds_path) else []
+
+                                    if len(images_files) == 0 and len(sounds_files) == 0:
+                                        # 资源目录为空，显示错误提示
+                                        with error_message['lock']:
+                                            error_message['active'] = True
+                                            error_message['message'] = f"Please click 'load' to download."
+                                        continue
+                                except Exception as e:
+                                    print(f"检查资源目录时出错: {e}")
+                                    with error_message['lock']:
+                                        error_message['active'] = True
+                                        error_message['message'] = f"Please click 'load' to download."
+                                    continue
+
                                 commands = get_commands(jsonfile)
 
                                 is_play = True
@@ -1442,6 +1473,7 @@ if __name__ == '__main__':
                             if selected_grid_item:
                                 selected_grid_item.set_selected(False)
                                 selected_grid_item = None
+                            json_selected = False
                             new_list = page_list(json_list_page,json_list)
                             json_grid_list = load_grid(new_list)
 
@@ -1453,6 +1485,7 @@ if __name__ == '__main__':
                             if selected_grid_item:
                                 selected_grid_item.set_selected(False)
                                 selected_grid_item = None
+                            json_selected = False
                             new_list = page_list(json_list_page,json_list)
                             json_grid_list = load_grid(new_list)
 
@@ -1464,6 +1497,7 @@ if __name__ == '__main__':
                                     if selected_grid_item:
                                         selected_grid_item.set_selected(False)
                                         selected_grid_item = None
+                                    json_selected = False
                                     new_list = page_list(json_list_page,json_list)
                                     json_grid_list = load_grid(new_list)
 
@@ -1480,16 +1514,44 @@ if __name__ == '__main__':
                                 # 显示错误提示，要求先点击load按钮
                                 with error_message['lock']:
                                     error_message['active'] = True
-                                    error_message['message'] = f"Cannot play. Please click 'load' to download resources first."
+                                    error_message['message'] = f"Please click 'load' to download."
                             else:
-                                # 播放时取消选中
-                                if selected_grid_item:
-                                    selected_grid_item.set_selected(False)
-                                    selected_grid_item = None
-                                is_play = True
-                                json_selected = False
-                                is_main = False
-                                screen.fill((0, 0, 0))
+                                # 检查资源目录是否存在
+                                resource_path = "./resource/" + json_file_name
+                                images_path = resource_path + "/images/"
+                                sounds_path = resource_path + "/sounds/"
+
+                                if not os.path.exists(images_path) or not os.path.exists(sounds_path):
+                                    # 资源目录不存在，显示错误提示
+                                    with error_message['lock']:
+                                        error_message['active'] = True
+                                        error_message['message'] = f"Please click 'load' to download."
+                                else:
+                                    # 检查images和sounds目录是否为空
+                                    try:
+                                        images_files = os.listdir(images_path) if os.path.exists(images_path) else []
+                                        sounds_files = os.listdir(sounds_path) if os.path.exists(sounds_path) else []
+
+                                        if len(images_files) == 0 and len(sounds_files) == 0:
+                                            # 资源目录为空，显示错误提示
+                                            with error_message['lock']:
+                                                error_message['active'] = True
+                                                error_message['message'] = f"Please click 'load' to download."
+                                        else:
+                                            # 资源存在，开始播放
+                                            # 播放时取消选中
+                                            if selected_grid_item:
+                                                selected_grid_item.set_selected(False)
+                                                selected_grid_item = None
+                                            is_play = True
+                                            json_selected = False
+                                            is_main = False
+                                            screen.fill((0, 0, 0))
+                                    except Exception as e:
+                                        print(f"检查资源目录时出错: {e}")
+                                        with error_message['lock']:
+                                            error_message['active'] = True
+                                            error_message['message'] = f"Please click 'load' to download."
 
             if event.type == QUIT:
                 anime_control.set_loop(False)
