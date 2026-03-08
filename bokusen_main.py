@@ -405,18 +405,91 @@ def get_articles(num):
     return articles[int(num)]
 
 
+# 全局下载进度变量
+download_progress = {
+    'total_files': 0,
+    'completed_files': 0,
+    'current_file': '',
+    'is_downloading': False,
+    'lock': threading.Lock()
+}
+
+class DownloadProgress:
+    """下载进度框类"""
+    def __init__(self):
+        self.active = False
+        self.rect = pygame.Rect(300, 250, 680, 120)
+        self.bar_bg_rect = pygame.Rect(330, 310, 620, 30)
+        self.bar_rect = pygame.Rect(330, 310, 0, 30)
+
+    def show(self, current_file, progress_percent):
+        """显示下载进度"""
+        self.active = True
+
+        # 绘制背景框
+        pygame.draw.rect(screen, (50, 50, 50), self.rect, 0)
+        pygame.draw.rect(screen, (100, 100, 100), self.rect, 2)
+
+        # 绘制进度条背景
+        pygame.draw.rect(screen, (30, 30, 30), self.bar_bg_rect, 0)
+        pygame.draw.rect(screen, (150, 150, 150), self.bar_bg_rect, 1)
+
+        # 计算进度条宽度
+        bar_width = int(620 * progress_percent / 100)
+        self.bar_rect.width = bar_width
+        pygame.draw.rect(screen, (100, 200, 100), self.bar_rect, 0)
+
+        # 显示标题
+        title_text = game_font.render("Downloading...", True, (255, 255, 255))
+        title_rect = title_text.get_rect(center=(display_width // 2, 275))
+        screen.blit(title_text, title_rect)
+
+        # 显示当前文件
+        if len(current_file) > 50:
+            display_name = "..." + current_file[-50:]
+        else:
+            display_name = current_file
+        file_text = text_font.render(f"Current: {display_name}", True, (200, 200, 200))
+        screen.blit(file_text, (330, 290))
+
+        # 显示进度百分比
+        percent_text = text_font.render(f"{progress_percent:.1f}%", True, (255, 255, 255))
+        percent_rect = percent_text.get_rect(center=(display_width // 2, 355))
+        screen.blit(percent_text, percent_rect)
+
+        pygame.display.flip()
+
+    def hide(self):
+        """隐藏进度框"""
+        self.active = False
+        self.bar_rect.width = 0
+
 def download_file(url, filename):
+    global download_progress
+
     print(f'Downloading {filename}...')
+
+    # 更新当前文件信息
+    with download_progress['lock']:
+        download_progress['current_file'] = os.path.basename(filename)
+
     download_times = 5
+    success = False
     while download_times > 0:
         try:
             urlretrieve(url, filename)
+            success = True
+            break
         except:
             print("error downloading : " + filename)
             download_times = download_times - 1
             continue
-        else:
-            break
+
+    if not success:
+        print(f'下载失败: {filename}')
+        with download_progress['lock']:
+            download_progress['completed_files'] += 1
+        return
 
     if 'm4a' in filename:
         wav_file = filename.replace("m4a","wav")
@@ -425,28 +498,40 @@ def download_file(url, filename):
         if not ffmpeg_available:
             print(f'跳过音频转换（ffmpeg 不可用）: {filename}')
             print(f'提示: 下载 ffmpeg.exe 并放到项目目录可启用 m4a 音频')
-            return
-
-        try:
-            AudioSegment.from_file(filename).export(wav_file, format="wav")
-            os.remove(filename)
-            print(f'音频转换成功: {wav_file}')
-        except Exception as e:
-            print(f'音频转换失败: {e}')
-            print(f'保留原文件: {filename}')
-            print(f'提示: 请确保 ffmpeg.exe 可用')
-
+        else:
+            try:
+                AudioSegment.from_file(filename).export(wav_file, format="wav")
+                os.remove(filename)
+                print(f'音频转换成功: {wav_file}')
+            except Exception as e:
+                print(f'音频转换失败: {e}')
+                print(f'保留原文件: {filename}')
+                print(f'提示: 请确保 ffmpeg.exe 可用')
 
     print(f'{filename} downloaded.')
 
+    # 更新完成计数
+    with download_progress['lock']:
+        download_progress['completed_files'] += 1
 
 
-#资源下载
+
+#资源下载（在后台线程中运行）
 def get_resource(json_file_name):
+    global download_progress
+
     os.makedirs("./resource/"+json_file_name+"/sounds/", exist_ok=True)
     os.makedirs("./resource/"+json_file_name+"/images/", exist_ok=True)
 
     print("你先别急")
+
+    # 初始化下载进度
+    with download_progress['lock']:
+        download_progress['total_files'] = 0
+        download_progress['completed_files'] = 0
+        download_progress['current_file'] = ''
+        download_progress['is_downloading'] = True
+
     start_time = time.time()
     with open("./json/"+json_file_name+".json",'r') as load_f:
         bokujson = json.load(load_f)
@@ -470,14 +555,27 @@ def get_resource(json_file_name):
             file_dict[url] = file_name
             count=count+1
 
+        total_files = len(file_dict)
+        with download_progress['lock']:
+            download_progress['total_files'] = total_files
+
+        # 使用包装器函数来更新进度（只更新数据，不调用pygame）
+        def download_with_progress(url, filename):
+            download_file(url, filename)
+
+        # 在单独线程中下载，同时主线程更新UI
         with concurrent.futures.ThreadPoolExecutor(max_workers=下载线程数) as executor:
-            futures = [executor.submit(download_file, url, filename) for url, filename in file_dict.items()]
+            futures = [executor.submit(download_with_progress, url, filename) for url, filename in file_dict.items()]
             concurrent.futures.wait(futures)
 
     end_time = time.time()
     run_time = end_time - start_time
     print(f"耗时：{run_time}秒")
     print("下好了，开冲！")
+
+    # 标记下载完成
+    with download_progress['lock']:
+        download_progress['is_downloading'] = False
 
 def get_cover_image(json_name):
     try:
@@ -893,6 +991,9 @@ if __name__ == '__main__':
     new_list = page_list(json_list_page,json_list)
     json_grid_list = load_grid(new_list)
 
+    # 进度框实例
+    progress_box = None
+
     while True:
         current_time = time.time()
 
@@ -1011,7 +1112,10 @@ if __name__ == '__main__':
                     # 处理load和play按钮的点击
                     if json_selected:
                         if load_button.in_rect(x, y):
-                            get_resource(json_file_name)
+                            # 在后台线程中启动下载，避免阻塞主界面
+                            download_thread = threading.Thread(target=get_resource, args=(json_file_name,))
+                            download_thread.daemon = True
+                            download_thread.start()
                         if play_button.in_rect(x, y):
                             # 播放时取消选中
                             if selected_grid_item:
@@ -1068,5 +1172,18 @@ if __name__ == '__main__':
                 # Ctrl 释放，停止快进
                 is_fast_forward = False
                 fast_forward_mode = False
+
+        # 检查是否正在下载，如果是则显示进度框
+        if download_progress['is_downloading']:
+            with download_progress['lock']:
+                if download_progress['total_files'] > 0:
+                    percent = (download_progress['completed_files'] / download_progress['total_files']) * 100
+                    if progress_box is None:
+                        progress_box = DownloadProgress()
+                    progress_box.show(download_progress['current_file'], percent)
+        else:
+            if progress_box is not None:
+                progress_box.hide()
+                progress_box = None
 
         pygame.display.flip()         
