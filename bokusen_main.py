@@ -80,9 +80,39 @@ all_text_rect = pygame.Rect(30, 550, 930, 200)
 
 #指令相关方法
 def get_json(json_file_name):
-    with open("./json/"+json_file_name+".json",'r') as load_f:     
-        bokujson = json.load(load_f)
-        return bokujson
+    """加载 JSON 文件"""
+    json_path = "./json/"+json_file_name+".json"
+
+    # 检查文件是否存在
+    if not os.path.exists(json_path):
+        print(f"错误：文件不存在 {json_path}")
+        print(f"提示：请先点击 'load' 按钮下载资源")
+        return None
+
+    # 检查文件是否为空
+    if os.path.getsize(json_path) == 0:
+        print(f"错误：文件为空 {json_path}")
+        print(f"提示：请先点击 'load' 按钮下载资源")
+        return None
+
+    try:
+        with open(json_path, 'r', encoding='utf-8') as load_f:
+            content = load_f.read().strip()
+            if not content:
+                print(f"错误：文件内容为空白 {json_path}")
+                print(f"提示：请先点击 'load' 按钮下载资源")
+                return None
+            bokujson = json.loads(content)
+            return bokujson
+    except json.JSONDecodeError as e:
+        print(f"错误：JSON 格式错误 {json_path}")
+        print(f"详细信息：{e}")
+        print(f"提示：请重新下载该资源")
+        return None
+    except Exception as e:
+        print(f"错误：加载 JSON 文件失败 {json_path}")
+        print(f"详细信息：{e}")
+        return None
 
 
 def get_commands(jsonfile):        
@@ -885,26 +915,6 @@ if __name__ == '__main__':
                     if event.key in [K_LCTRL, K_RCTRL]:
                         is_fast_forward = False
 
-            if json_selected:
-                load_button.show_button()
-                play_button.show_button()
-
-                if event.type == MOUSEBUTTONDOWN and event.button == 1:
-                    x = event.pos[0]
-                    y = event.pos[1]
-
-                    if load_button.in_rect(x,y):
-                        get_resource(json_file_name)
-                    if play_button.in_rect(x,y):
-                        # 播放时取消选中
-                        if selected_grid_item:
-                            selected_grid_item.set_selected(False)
-                            selected_grid_item = None
-                        is_play = True
-                        json_selected = False
-                        is_main = False
-                        screen.fill((0,0,0))
-
             if is_main:
                 # 清除整个屏幕,避免内容叠加
                 screen.fill((0, 0, 0))
@@ -918,6 +928,11 @@ if __name__ == '__main__':
                     pages_down_button.show_button()
                     page_buttons = show_page_info(json_list_page, pages_size)
 
+                # 如果选中了某个项目，显示load和play按钮
+                if json_selected:
+                    load_button.show_button()
+                    play_button.show_button()
+
                 if event.type == MOUSEBUTTONDOWN and event.button == 1:
                     x = event.pos[0]
                     y = event.pos[1]
@@ -929,6 +944,9 @@ if __name__ == '__main__':
                             if selected_grid_item == item:
                                 json_file_name = item.text
                                 jsonfile = get_json(json_file_name)
+                                if jsonfile is None:
+                                    print(f"无法加载 {json_file_name}，请先点击 'load' 下载资源")
+                                    continue
                                 commands = get_commands(jsonfile)
 
                                 is_play = True
@@ -947,6 +965,11 @@ if __name__ == '__main__':
                                 selected_grid_item = item
                                 json_file_name = item.text
                                 jsonfile = get_json(json_file_name)
+                                if jsonfile is None:
+                                    print(f"无法加载 {json_file_name}，请先点击 'load' 下载资源")
+                                    selected_grid_item.set_selected(False)
+                                    selected_grid_item = None
+                                    continue
                                 commands = get_commands(jsonfile)
                                 json_selected = True
                                 print(f"选中: {item.text}")
@@ -984,6 +1007,20 @@ if __name__ == '__main__':
                                         selected_grid_item = None
                                     new_list = page_list(json_list_page,json_list)
                                     json_grid_list = load_grid(new_list)
+
+                    # 处理load和play按钮的点击
+                    if json_selected:
+                        if load_button.in_rect(x, y):
+                            get_resource(json_file_name)
+                        if play_button.in_rect(x, y):
+                            # 播放时取消选中
+                            if selected_grid_item:
+                                selected_grid_item.set_selected(False)
+                                selected_grid_item = None
+                            is_play = True
+                            json_selected = False
+                            is_main = False
+                            screen.fill((0, 0, 0))
 
             if event.type == QUIT:
                 anime_control.set_loop(False)
