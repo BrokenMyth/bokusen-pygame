@@ -508,6 +508,12 @@ error_message = {
     'lock': threading.Lock()
 }
 
+# 全局网格刷新标志
+need_refresh_grid = {
+    'refresh': False,
+    'lock': threading.Lock()
+}
+
 class ErrorMessageBox:
     """错误提示框类"""
     def __init__(self):
@@ -888,11 +894,14 @@ def get_resource(json_file_name):
 
         # 只有在JSON有效的情况下才尝试重新加载
         if json_valid:
-            global jsonfile, commands, json_selected
+            global jsonfile, commands, json_selected, need_refresh_grid
             jsonfile = get_json(json_file_name)
             if jsonfile is not None:
                 commands = get_commands(jsonfile)
                 print(f"重新加载成功: {json_file_name}")
+                # 标记需要刷新网格列表
+                with need_refresh_grid['lock']:
+                    need_refresh_grid['refresh'] = True
             else:
                 print(f"重新加载失败: {json_file_name}")
         else:
@@ -1543,5 +1552,14 @@ if __name__ == '__main__':
             if progress_box is not None:
                 progress_box.hide()
                 progress_box = None
+
+            # 检查是否需要刷新网格列表
+            with need_refresh_grid['lock']:
+                if need_refresh_grid['refresh']:
+                    need_refresh_grid['refresh'] = False
+                    # 重新加载当前页的网格列表
+                    new_list = page_list(json_list_page, json_list)
+                    json_grid_list = load_grid(new_list)
+                    print("网格列表已刷新")
 
         pygame.display.flip()         
