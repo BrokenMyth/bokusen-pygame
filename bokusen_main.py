@@ -912,7 +912,28 @@ def get_resource(json_file_name):
 
 def get_cover_image(json_name):
     try:
-        # 首先尝试从JSON中获取动画的第一帧作为封面
+        # 使用模糊匹配查找资源文件夹
+        resource_dir = "./resource"
+
+        # 提取数字部分用于模糊匹配
+        numbers = re.findall(r'\d+', json_name)
+        if not numbers:
+            return None
+
+        # 查找包含数字的文件夹
+        resource_folder = None
+        if os.path.exists(resource_dir):
+            for folder in os.listdir(resource_dir):
+                # 检查文件夹是否包含json_name中的所有数字
+                match_all = all(num in folder for num in numbers)
+                if match_all:
+                    resource_folder = folder
+                    break
+
+        if resource_folder is None:
+            return None
+
+        # 首先尝试从JSON中获取ev类型的图片作为封面
         json_path = "./json/" + json_name + ".json"
         if os.path.exists(json_path) and os.path.getsize(json_path) > 0:
             try:
@@ -921,8 +942,41 @@ def get_cover_image(json_name):
                     commands = bokujson['data']['code']['commands']
                     tags = bokujson['data']['code']['tags']
                     parameters = bokujson['data']['code']['parameters']
+                    images = bokujson['data']['code']['images']
 
-                    # 查找第一个 animstart 命令
+                    # 优先查找 ev 类型的图片，使用最后一个出现的
+                    ev_images = []
+                    for cmd in commands:
+                        tag_idx = cmd[0]
+                        param_idx = cmd[1]
+                        tag = tags[int(tag_idx)]
+
+                        if tag == "image":
+                            param = parameters[int(param_idx)]
+                            if param[16] != "1":
+                                image_num = int(param[-3])
+                                image_url = images[image_num]
+                                # 提取图片类型
+                                image_type = image_url.replace("https://resource-asw.bokusen.net/resource/img/script/", "").split("/")[0]
+
+                                if image_type == "ev":
+                                    ev_images.append(image_num)
+
+                    # 使用最后一个 ev 类型的图片作为封面
+                    if ev_images:
+                        ev_image_num = ev_images[-1]
+                        resource_path = "./resource/" + resource_folder + "/images/"
+                        if os.path.exists(resource_path):
+                            file_names = os.listdir(resource_path)
+                            pattern = re.compile(r"^(\d+)\..*")
+                            for f in file_names:
+                                match = pattern.match(f)
+                                if match:
+                                    num = int(match.group(1))
+                                    if num == ev_image_num:
+                                        return pygame.image.load(resource_path + f).convert_alpha()
+
+                    # 如果没有找到 ev 类型，查找第一个 animstart 命令
                     for cmd in commands:
                         tag_idx = cmd[0]
                         param_idx = cmd[1]
@@ -936,7 +990,7 @@ def get_cover_image(json_name):
                                 if anime_list:
                                     # 使用第一帧图片作为封面
                                     first_frame_num = int(anime_list[0])
-                                    resource_path = "./resource/" + json_name + "/images/"
+                                    resource_path = "./resource/" + resource_folder + "/images/"
                                     if os.path.exists(resource_path):
                                         file_names = os.listdir(resource_path)
                                         pattern = re.compile(r"^(\d+)\..*")
@@ -946,31 +1000,32 @@ def get_cover_image(json_name):
                                                 num = int(match.group(1))
                                                 if num == first_frame_num:
                                                     return pygame.image.load(resource_path + f).convert_alpha()
+
+                    # 如果没有找到动画，使用最后一张图片
+                    resource_path = "./resource/" + resource_folder + "/images/"
+                    if os.path.exists(resource_path):
+                        file_names = os.listdir(resource_path)
+                        pattern = re.compile(r"^(\d+)\..*")
+                        matching_files = [f for f in file_names if pattern.match(f)]
+
+                        if matching_files:
+                            # 找出编号最大的图片（最后一张）
+                            max_num = -1
+                            last_file = None
+                            for f in matching_files:
+                                match = pattern.match(f)
+                                if match:
+                                    num = int(match.group(1))
+                                    if num > max_num:
+                                        max_num = num
+                                        last_file = f
+
+                            if last_file:
+                                return pygame.image.load(resource_path + last_file).convert_alpha()
             except:
-                pass  # JSON解析失败，继续使用原来的逻辑
+                pass  # JSON解析失败，返回None
 
-        # 如果没有找到动画，使用原来的逻辑（最后一张图片）
-        resource_path = "./resource/" + json_name + "/images/"
-        if not os.path.exists(resource_path):
-            return None
-
-        file_names = os.listdir(resource_path)
-        pattern = re.compile(r"^(\d+)\..*")
-        matching_files = [f for f in file_names if pattern.match(f)]
-
-        if not matching_files:
-            return None
-
-        max_num = -1
-        cover_file = None
-        for f in matching_files:
-            num = int(pattern.match(f).group(1))
-            if num > max_num:
-                max_num = num
-                cover_file = f
-
-        if cover_file:
-            return pygame.image.load(resource_path + cover_file).convert_alpha()
+        # 如果JSON不存在或解析失败，返回None
         return None
     except:
         return None
