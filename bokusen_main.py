@@ -178,7 +178,6 @@ def read_commands(jsonfile,num):
             commands_count = 0
             is_play = False
             is_main = True
-            json_list_page = 0
             json_selected = False
             screen.fill((0,0,0))
 
