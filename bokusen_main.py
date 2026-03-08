@@ -912,7 +912,45 @@ def get_resource(json_file_name):
 
 def get_cover_image(json_name):
     try:
-        resource_path = "./resource/"+json_name+"/images/"
+        # 首先尝试从JSON中获取动画的第一帧作为封面
+        json_path = "./json/" + json_name + ".json"
+        if os.path.exists(json_path) and os.path.getsize(json_path) > 0:
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    bokujson = json.load(f)
+                    commands = bokujson['data']['code']['commands']
+                    tags = bokujson['data']['code']['tags']
+                    parameters = bokujson['data']['code']['parameters']
+
+                    # 查找第一个 animstart 命令
+                    for cmd in commands:
+                        tag_idx = cmd[0]
+                        param_idx = cmd[1]
+                        tag = tags[int(tag_idx)]
+
+                        if tag == "animstart":
+                            param = parameters[int(param_idx)]
+                            if len(param) >= 4 and len(param[-3]) > 10:
+                                # 获取动画列表（空格分隔的图片编号）
+                                anime_list = param[-3].strip().split()
+                                if anime_list:
+                                    # 使用第一帧图片作为封面
+                                    first_frame_num = int(anime_list[0])
+                                    resource_path = "./resource/" + json_name + "/images/"
+                                    if os.path.exists(resource_path):
+                                        file_names = os.listdir(resource_path)
+                                        pattern = re.compile(r"^(\d+)\..*")
+                                        for f in file_names:
+                                            match = pattern.match(f)
+                                            if match:
+                                                num = int(match.group(1))
+                                                if num == first_frame_num:
+                                                    return pygame.image.load(resource_path + f).convert_alpha()
+            except:
+                pass  # JSON解析失败，继续使用原来的逻辑
+
+        # 如果没有找到动画，使用原来的逻辑（最后一张图片）
+        resource_path = "./resource/" + json_name + "/images/"
         if not os.path.exists(resource_path):
             return None
 
