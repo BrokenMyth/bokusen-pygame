@@ -1105,27 +1105,34 @@ class Text_Controller():
         self.controller_stack=0
         
 class Anime_Controller(threading.Thread):
-    anime_list=[] 
+    anime_list=[]
     fps = 15
     loop = True
     is_started = False
+    is_animating = False  # 添加动画播放状态标志
 
     def __init__(self):
         threading.Thread.__init__(self)
         self.is_started = False
+        self.is_animating = False
 
     def set_anime_list(self,str):
         self.anime_list = str.rstrip().split(" ")
 
     def set_loop(self,status):
         self.loop = status
-        
+
     def run(self):
         self.is_started = True
+        self.is_animating = True
         while self.loop:
             i = 0
             while i<len(self.anime_list):
                 img = get_images(int(self.anime_list[i]))
+                if not img:  # 如果图片不存在，跳过
+                    i += 1
+                    continue
+
                 img = pygame.transform.scale(img, CG_SIZE)
 
                 # 计算水平居中位置，垂直方向置顶
@@ -1135,11 +1142,12 @@ class Anime_Controller(threading.Thread):
                 screen.blit(img, (cg_x, cg_y))
                 pygame.display.flip()
                 time.sleep(1/self.fps)
-                i=i+1
+                i+=1
                 if i==len(self.anime_list):
                     i=0
                 if not self.loop:
                     break
+        self.is_animating = False
 
 #hs列表
 #获取列表
@@ -1485,7 +1493,9 @@ if __name__ == '__main__':
         # 快进逻辑
         if is_play:
             # 每帧都重新绘制 CG 和文本，让 Skip 提示被自然覆盖
-            cg_control.show_cg()
+            # 只有在动画未播放时才绘制CG，避免和动画线程冲突
+            if not anime_control.is_animating:
+                cg_control.show_cg()
             txt_control.show_text()
 
             # 检查键盘状态（支持直接检测，不依赖 KEYDOWN/KEYUP）
