@@ -1,0 +1,6 @@
+{
+  "update_url": "https://github.com/BrokenMyth/bokusen-pygame/releases",
+  "github_api": "https://api.github.com/repos/BrokenMyth/bokusen-pygame/releases/latest",
+  "target_file": "BOKUSEN.exe",
+  "check_interval": 3600
+}
