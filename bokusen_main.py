@@ -11,6 +11,7 @@ import threading
 from pydub import AudioSegment
 import math
 import concurrent.futures
+import subprocess
 
 # 配置 ffmpeg 路径
 def configure_ffmpeg():
@@ -44,6 +45,61 @@ def configure_ffmpeg():
 
 # 初始化时配置 ffmpeg
 ffmpeg_available = configure_ffmpeg()
+
+# 获取ffmpeg路径
+def get_ffmpeg_path():
+    """获取ffmpeg可执行文件的路径"""
+    ffmpeg_paths = [
+        'ffmpeg.exe',
+        './ffmpeg.exe',
+        os.path.join(os.path.dirname(__file__), 'ffmpeg.exe'),
+        'C:/ffmpeg/bin/ffmpeg.exe',
+        os.path.join(os.path.dirname(sys.executable), 'ffmpeg.exe'),
+    ]
+
+    for path in ffmpeg_paths:
+        if os.path.exists(path):
+            return path
+
+    # 检查系统 PATH
+    try:
+        import shutil
+        if shutil.which('ffmpeg'):
+            return shutil.which('ffmpeg')
+    except:
+        pass
+
+    return None
+
+ffmpeg_path = get_ffmpeg_path()
+
+# 不弹出窗口的音频转换函数
+def convert_audio_no_window(input_file, output_file):
+    """使用ffmpeg转换音频，不显示cmd窗口"""
+    try:
+        if sys.platform == 'win32':
+            # Windows下隐藏cmd窗口
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            subprocess.run(
+                [ffmpeg_path, '-i', input_file, output_file],
+                startupinfo=startupinfo,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+        else:
+            # 其他系统正常执行
+            subprocess.run(
+                [ffmpeg_path, '-i', input_file, output_file],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+        return True
+    except Exception as e:
+        print(f'音频转换失败: {e}')
+        return False
 
 #用户设置
 user_setting_file =  open("settings.json",'r',encoding='utf8') 
@@ -244,6 +300,7 @@ def execut_commands(tag,param):
             # 检查文件格式，如果是 m4a 说明转换失败，跳过播放
             if sound_file.endswith('.m4a'):
                 print(f'playse warning: 音频文件未转换 ({sound_file})，跳过播放')
+                return "end"
                 return "end"
 
             try:
@@ -466,17 +523,19 @@ def get_sounds(num):
 
     # 如果有 m4a 文件且 ffmpeg 可用，尝试转换
     m4a_files = [f for f in matching_file_names if f.endswith('.m4a')]
-    if m4a_files and ffmpeg_available:
+    if m4a_files and ffmpeg_available and ffmpeg_path:
         m4a_file = resouce_path + m4a_files[0]
         wav_file = m4a_file.replace(".m4a", ".wav")
 
         try:
             print(f'转换音频: {m4a_files[0]} -> wav')
-            AudioSegment.from_file(m4a_file).export(wav_file, format="wav")
-            print(f'转换成功: {wav_file}')
-            return wav_file
+            # 使用不显示窗口的转换方式
+            if convert_audio_no_window(m4a_file, wav_file):
+                print(f'转换成功: {wav_file}')
+                return wav_file
         except Exception as e:
             print(f'转换失败: {e}')
+            pass
 
     # 如果没有 wav，返回其他格式（可能是转换失败的 m4a）
     if matching_file_names:
@@ -666,14 +725,15 @@ def download_file(url, filename):
         wav_file = filename.replace("m4a","wav")
 
         # 检查 ffmpeg 是否可用
-        if not ffmpeg_available:
+        if not ffmpeg_available or not ffmpeg_path:
             print(f'跳过音频转换（ffmpeg 不可用）: {filename}')
             print(f'提示: 下载 ffmpeg.exe 并放到项目目录可启用 m4a 音频')
         else:
             try:
-                AudioSegment.from_file(filename).export(wav_file, format="wav")
-                os.remove(filename)
-                print(f'音频转换成功: {wav_file}')
+                # 使用不显示窗口的转换方式
+                if convert_audio_no_window(filename, wav_file):
+                    os.remove(filename)
+                    print(f'音频转换成功: {wav_file}')
             except Exception as e:
                 print(f'音频转换失败: {e}')
                 print(f'保留原文件: {filename}')
@@ -874,7 +934,7 @@ def get_resource(json_file_name):
                     json_valid = False
                     # 恢复备份
                     if os.path.exists(backup_path):
-                        os.rename(backup_path, json_path)
+                                os.rename(backup_path, json_path)
         except Exception as e2:
             print(f"重新下载JSON文件失败: {e2}")
             json_valid = False
