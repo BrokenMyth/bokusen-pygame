@@ -3,6 +3,7 @@ import os
 import re
 import json
 from urllib.request import urlretrieve
+from urllib.parse import quote
 from pygame.locals import*
 from sys import exit
 import time
@@ -81,18 +82,26 @@ all_text_rect = pygame.Rect(30, 550, 930, 200)
 #指令相关方法
 def get_json(json_file_name):
     """加载 JSON 文件"""
+    global error_message
+
     json_path = "./json/"+json_file_name+".json"
 
     # 检查文件是否存在
     if not os.path.exists(json_path):
         print(f"错误：文件不存在 {json_path}")
         print(f"提示：请先点击 'load' 按钮下载资源")
+        with error_message['lock']:
+            error_message['active'] = True
+            error_message['message'] = f"File not found: {json_file_name}.json"
         return None
 
     # 检查文件是否为空
     if os.path.getsize(json_path) == 0:
         print(f"错误：文件为空 {json_path}")
         print(f"提示：请先点击 'load' 按钮下载资源")
+        with error_message['lock']:
+            error_message['active'] = True
+            error_message['message'] = f"File is empty: {json_file_name}.json"
         return None
 
     try:
@@ -101,6 +110,9 @@ def get_json(json_file_name):
             if not content:
                 print(f"错误：文件内容为空白 {json_path}")
                 print(f"提示：请先点击 'load' 按钮下载资源")
+                with error_message['lock']:
+                    error_message['active'] = True
+                    error_message['message'] = f"File content is empty: {json_file_name}.json"
                 return None
             bokujson = json.loads(content)
             return bokujson
@@ -108,10 +120,16 @@ def get_json(json_file_name):
         print(f"错误：JSON 格式错误 {json_path}")
         print(f"详细信息：{e}")
         print(f"提示：请重新下载该资源")
+        with error_message['lock']:
+            error_message['active'] = True
+            error_message['message'] = f"JSON format error: {json_file_name}.json. Please click 'load' to download resources."
         return None
     except Exception as e:
         print(f"错误：加载 JSON 文件失败 {json_path}")
         print(f"详细信息：{e}")
+        with error_message['lock']:
+            error_message['active'] = True
+            error_message['message'] = f"Failed to load: {json_file_name}.json. Error: {str(e)}"
         return None
 
 
@@ -167,19 +185,33 @@ def read_commands(jsonfile,num):
 
             
 def execut_commands(tag,param):
+    global error_message, is_play, is_main, is_fast_forward, fast_forward_mode
 
     if tag=="bgmopt":
         pass
     
     if tag=="image":
-        
+
         if param[16]!="1":
             image_num = int(param[-3])
-            image_type = jsonfile['data']['code']['images'][image_num].replace("https://resource-asw.bokusen.net/resource/img/script/","").split("/")[0] 
+            image_type = jsonfile['data']['code']['images'][image_num].replace("https://resource-asw.bokusen.net/resource/img/script/","").split("/")[0]
             image_order = param[-8]
             print("cg"+param[-3])
 
             cg = get_images(image_num)
+
+            if not cg:
+                print(f'image error: 图片文件不存在')
+                # 显示错误提示
+                with error_message['lock']:
+                    error_message['active'] = True
+                    error_message['message'] = f"Resources not found. Please click 'load' to download resources."
+                # 停止播放并返回主菜单
+                is_play = False
+                is_main = True
+                is_fast_forward = False
+                fast_forward_mode = False
+                return "stop"
 
             if image_order == "fore":
                 cg_control.set_fore_img(cg)
@@ -202,6 +234,7 @@ def execut_commands(tag,param):
         pass
     if tag=="playse":
 
+        sound_file = None
         try:
             sound_file = get_sounds(param[-1])
 
@@ -222,10 +255,24 @@ def execut_commands(tag,param):
                 se_channel.play(Sound)
             except Exception as e:
                 print(f'playse play error: {e}')
-                print(f'音频文件: {sound_file}')
-                print(f'文件存在: {os.path.exists(sound_file) if sound_file else "未知"}')
+                if sound_file:
+                    print(f'音频文件: {sound_file}')
+                    print(f'文件存在: {os.path.exists(sound_file)}')
         except Exception as e:
             print(f'playse error: {e}')
+            # 如果是目录不存在的错误，提示用户下载资源
+            if "No such file or directory" in str(e) or "系统找不到指定的路径" in str(e):
+                print(f'提示: 请点击load按钮下载资源')
+                # 显示错误提示
+                with error_message['lock']:
+                    error_message['active'] = True
+                    error_message['message'] = f"Resources not found. Please click 'load' to download resources."
+                # 停止播放并返回主菜单
+                is_play = False
+                is_main = True
+                is_fast_forward = False
+                fast_forward_mode = False
+                return "stop"
 
     if tag=="articles":
         txt = get_articles(param[0])
@@ -261,6 +308,7 @@ def execut_commands(tag,param):
     if tag=="playbgm":
         print('playbgm'+param[-1])
 
+        sound_file = None
         try:
             sound_file = get_sounds(param[-1])
 
@@ -287,14 +335,29 @@ def execut_commands(tag,param):
                 print('playbgm play error')
         except Exception as e:
             print(f'playbgm error: {e}')
-            print(f'音频文件: {sound_file}')
-            print(f'文件存在: {os.path.exists(sound_file) if sound_file else "未知"}')
+            if sound_file:
+                print(f'音频文件: {sound_file}')
+                print(f'文件存在: {os.path.exists(sound_file)}')
+            # 如果是目录不存在的错误，提示用户下载资源
+            if "No such file or directory" in str(e) or "系统找不到指定的路径" in str(e):
+                print(f'提示: 请点击load按钮下载资源')
+                # 显示错误提示
+                with error_message['lock']:
+                    error_message['active'] = True
+                    error_message['message'] = f"Resources not found. Please click 'load' to download resources."
+                # 停止播放并返回主菜单
+                is_play = False
+                is_main = True
+                is_fast_forward = False
+                fast_forward_mode = False
+                return "stop"
 
         
 
     if tag=="fadeinbgm":
         print('fadeinbgm'+param[1])
 
+        sound_file = None
         try:
             sound_file = get_sounds(param[1])
 
@@ -319,8 +382,22 @@ def execut_commands(tag,param):
                 print('fadeinbgm play error')
         except Exception as e:
             print(f'fadeinbgm error: {e}')
-            print(f'音频文件: {sound_file}')
-            print(f'文件存在: {os.path.exists(sound_file) if sound_file else "未知"}')
+            if sound_file:
+                print(f'音频文件: {sound_file}')
+                print(f'文件存在: {os.path.exists(sound_file)}')
+            # 如果是目录不存在的错误，提示用户下载资源
+            if "No such file or directory" in str(e) or "系统找不到指定的路径" in str(e):
+                print(f'提示: 请点击load按钮下载资源')
+                # 显示错误提示
+                with error_message['lock']:
+                    error_message['active'] = True
+                    error_message['message'] = f"Resources not found. Please click 'load' to download resources."
+                # 停止播放并返回主菜单
+                is_play = False
+                is_main = True
+                is_fast_forward = False
+                fast_forward_mode = False
+                return "stop"
 
     if tag=="fadeoutbgm":
         pass
@@ -354,9 +431,14 @@ def execut_commands(tag,param):
     return "end"
 
 #加载资源
-def get_images(num):  
+def get_images(num):
     global json_file_name
     resouce_path =  "./resource/"+json_file_name+"/images/"
+
+    # 检查目录是否存在
+    if not os.path.exists(resouce_path):
+        print(f'图片目录不存在: {resouce_path}')
+        return None
 
     file_names = os.listdir(resouce_path)
     pattern = re.compile("^"+str(num)+"\..*")
@@ -368,6 +450,11 @@ def get_images(num):
 def get_sounds(num):
     global json_file_name
     resouce_path =  "./resource/"+json_file_name+"/sounds/"
+
+    # 检查目录是否存在
+    if not os.path.exists(resouce_path):
+        print(f'音频目录不存在: {resouce_path}')
+        return None
 
     file_names = os.listdir(resouce_path)
     pattern = re.compile("^"+str(num)+"\..*")
@@ -413,6 +500,85 @@ download_progress = {
     'is_downloading': False,
     'lock': threading.Lock()
 }
+
+# 全局错误消息
+error_message = {
+    'active': False,
+    'message': '',
+    'lock': threading.Lock()
+}
+
+class ErrorMessageBox:
+    """错误提示框类"""
+    def __init__(self):
+        self.active = False
+        self.rect = pygame.Rect(200, 300, 880, 150)
+        self.button_rect = pygame.Rect(display_width // 2 - 60, 410, 120, 30)
+
+    def show(self, message):
+        """显示错误提示"""
+        self.active = True
+        message = message
+
+        # 绘制背景框
+        pygame.draw.rect(screen, (60, 40, 40), self.rect, 0)
+        pygame.draw.rect(screen, (150, 50, 50), self.rect, 3)
+
+        # 显示标题
+        title_text = game_font.render("Error", True, (255, 100, 100))
+        title_rect = title_text.get_rect(center=(display_width // 2, 325))
+        screen.blit(title_text, title_rect)
+
+        # 显示错误消息（分两行显示）
+        words = message.split()
+        line1 = ""
+        line2 = ""
+        current_line = line1
+
+        for word in words:
+            test_line = current_line + " " + word if current_line else word
+            test_text = text_font.render(test_line, True, (255, 255, 255))
+            if test_text.get_width() < 840:
+                current_line = test_line
+            else:
+                if line1 == "":
+                    line1 = current_line
+                    current_line = word
+                else:
+                    line2 = current_line
+                    break
+
+        if line2 == "":
+            line1 = current_line
+
+        if line1:
+            text1 = text_font.render(line1, True, (255, 255, 255))
+            text1_rect = text1.get_rect(center=(display_width // 2, 375))
+            screen.blit(text1, text1_rect)
+
+        if line2:
+            text2 = text_font.render(line2, True, (255, 255, 255))
+            text2_rect = text2.get_rect(center=(display_width // 2, 405))
+            screen.blit(text2, text2_rect)
+
+        # 绘制OK按钮
+        pygame.draw.rect(screen, (80, 80, 80), self.button_rect, 0)
+        pygame.draw.rect(screen, (150, 150, 150), self.button_rect, 2)
+        button_text = text_font.render("OK", True, (255, 255, 255))
+        button_rect = button_text.get_rect(center=self.button_rect.center)
+        screen.blit(button_text, button_rect)
+
+        pygame.display.flip()
+
+    def hide(self):
+        """隐藏错误提示框"""
+        self.active = False
+
+    def is_clicked(self, x, y):
+        """检查是否点击了OK按钮"""
+        inx = (x > self.button_rect[0]) and (x < (self.button_rect[0] + self.button_rect[2]))
+        iny = (y > self.button_rect[1]) and (y < (self.button_rect[1] + self.button_rect[3]))
+        return inx and iny
 
 class DownloadProgress:
     """下载进度框类"""
@@ -518,7 +684,7 @@ def download_file(url, filename):
 
 #资源下载（在后台线程中运行）
 def get_resource(json_file_name):
-    global download_progress
+    global download_progress, error_message
 
     os.makedirs("./resource/"+json_file_name+"/sounds/", exist_ok=True)
     os.makedirs("./resource/"+json_file_name+"/images/", exist_ok=True)
@@ -532,50 +698,208 @@ def get_resource(json_file_name):
         download_progress['current_file'] = ''
         download_progress['is_downloading'] = True
 
-    start_time = time.time()
-    with open("./json/"+json_file_name+".json",'r') as load_f:
-        bokujson = json.load(load_f)
-        images = bokujson['data']['code']['images']
-        sounds = bokujson['data']['code']['sounds']
-        file_dict = {}
+    # 检查JSON文件
+    json_path = "./json/"+json_file_name+".json"
+    json_valid = True
 
-        count = 0
-        while(count<len(sounds)):
-            endname = '.'+sounds[count].split('.')[-1]
-            file_name = "./resource/"+json_file_name+"/sounds/"+str(count)+endname
-            url = sounds[count]
-            file_dict[url] = file_name
-            count=count+1
+    # 如果JSON文件不存在或为空，尝试从服务器下载
+    if not os.path.exists(json_path) or os.path.getsize(json_path) == 0:
+        print(f"JSON文件不存在或为空，尝试从服务器下载: {json_path}")
+        json_url = f"https://resource-asw.bokusen.net/resource/json/{quote(json_file_name)}.json"
 
-        count = 0
-        while(count<len(images)):
-            endname = '.'+images[count].split('.')[-1]
-            file_name = "./resource/"+json_file_name+"/images/"+str(count)+endname
-            url = images[count]
-            file_dict[url] = file_name
-            count=count+1
+        try:
+            print(f"正在下载JSON文件: {json_url}")
+            urlretrieve(json_url, json_path)
+            print(f"JSON文件下载成功: {json_path}")
 
-        total_files = len(file_dict)
+            # 检查下载的文件是否为空
+            if os.path.getsize(json_path) == 0:
+                print(f"错误：下载的JSON文件为空 {json_path}")
+                json_valid = False
+            else:
+                # 验证JSON格式
+                try:
+                    with open(json_path, 'r', encoding='utf-8') as f:
+                        json.load(f)
+                    print(f"JSON文件格式验证通过")
+                except json.JSONDecodeError as e:
+                    print(f"错误：下载的JSON文件格式无效 {json_path}")
+                    print(f"详细信息：{e}")
+                    # 删除损坏的文件
+                    os.remove(json_path)
+                    json_valid = False
+        except Exception as e:
+            print(f"下载JSON文件失败: {e}")
+            if not os.path.exists(json_path):
+                json_valid = False
+
+    if not json_valid:
+        print(f"错误：JSON文件无效或无法下载 {json_path}")
         with download_progress['lock']:
-            download_progress['total_files'] = total_files
+            download_progress['is_downloading'] = False
+        json_valid = False
 
-        # 使用包装器函数来更新进度（只更新数据，不调用pygame）
-        def download_with_progress(url, filename):
-            download_file(url, filename)
+    start_time = time.time()
+    try:
+        if json_valid:
+            with open(json_path, 'r', encoding='utf-8') as load_f:
+                content = load_f.read().strip()
+                if not content:
+                    print(f"错误：JSON文件内容为空白 {json_path}")
+                    # 尝试重新下载JSON文件
+                    json_valid = False
+                    raise ValueError("JSON file is empty")
+                else:
+                    bokujson = json.loads(content)
+                    images = bokujson['data']['code']['images']
+                    sounds = bokujson['data']['code']['sounds']
+                    file_dict = {}
 
-        # 在单独线程中下载，同时主线程更新UI
-        with concurrent.futures.ThreadPoolExecutor(max_workers=下载线程数) as executor:
-            futures = [executor.submit(download_with_progress, url, filename) for url, filename in file_dict.items()]
-            concurrent.futures.wait(futures)
+                    count = 0
+                    while(count<len(sounds)):
+                        endname = '.'+sounds[count].split('.')[-1]
+                        file_name = "./resource/"+json_file_name+"/sounds/"+str(count)+endname
+                        url = sounds[count]
+                        file_dict[url] = file_name
+                        count=count+1
 
-    end_time = time.time()
-    run_time = end_time - start_time
-    print(f"耗时：{run_time}秒")
-    print("下好了，开冲！")
+                    count = 0
+                    while(count<len(images)):
+                        endname = '.'+images[count].split('.')[-1]
+                        file_name = "./resource/"+json_file_name+"/images/"+str(count)+endname
+                        url = images[count]
+                        file_dict[url] = file_name
+                        count=count+1
 
-    # 标记下载完成
-    with download_progress['lock']:
-        download_progress['is_downloading'] = False
+                    total_files = len(file_dict)
+                    with download_progress['lock']:
+                        download_progress['total_files'] = total_files
+
+                    # 使用包装器函数来更新进度（只更新数据，不调用pygame）
+                    def download_with_progress(url, filename):
+                        download_file(url, filename)
+
+                    # 在单独线程中下载，同时主线程更新UI
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=下载线程数) as executor:
+                        futures = [executor.submit(download_with_progress, url, filename) for url, filename in file_dict.items()]
+                        concurrent.futures.wait(futures)
+
+                    end_time = time.time()
+                    run_time = end_time - start_time
+                    print(f"耗时：{run_time}秒")
+                    print("下好了，开冲！")
+
+    except (json.JSONDecodeError, ValueError) as e:
+        print(f"错误：JSON 文件无效 {json_path}")
+        print(f"详细信息：{e}")
+        print(f"提示：尝试从服务器重新下载JSON文件")
+
+        # 尝试从服务器重新下载JSON文件
+        json_url = f"https://resource-asw.bokusen.net/resource/json/{quote(json_file_name)}.json"
+        try:
+            print(f"正在重新下载JSON文件: {json_url}")
+            # 备份旧文件
+            backup_path = json_path + ".backup"
+            if os.path.exists(json_path):
+                os.rename(json_path, backup_path)
+
+            # 下载新文件
+            urlretrieve(json_url, json_path)
+
+            # 验证新文件
+            if os.path.getsize(json_path) == 0:
+                print(f"错误：下载的JSON文件为空")
+                json_valid = False
+                # 恢复备份
+                if os.path.exists(backup_path):
+                    os.rename(backup_path, json_path)
+            else:
+                try:
+                    with open(json_path, 'r', encoding='utf-8') as f:
+                        json.load(f)
+                    print(f"JSON文件重新下载成功")
+
+                    # 删除备份
+                    if os.path.exists(backup_path):
+                        os.remove(backup_path)
+
+                    # 重新加载并下载资源
+                    json_valid = True
+                    with open(json_path, 'r', encoding='utf-8') as load_f:
+                        content = load_f.read().strip()
+                        bokujson = json.loads(content)
+                        images = bokujson['data']['code']['images']
+                        sounds = bokujson['data']['code']['sounds']
+                        file_dict = {}
+
+                        count = 0
+                        while(count<len(sounds)):
+                            endname = '.'+sounds[count].split('.')[-1]
+                            file_name = "./resource/"+json_file_name+"/sounds/"+str(count)+endname
+                            url = sounds[count]
+                            file_dict[url] = file_name
+                            count=count+1
+
+                        count = 0
+                        while(count<len(images)):
+                            endname = '.'+images[count].split('.')[-1]
+                            file_name = "./resource/"+json_file_name+"/images/"+str(count)+endname
+                            url = images[count]
+                            file_dict[url] = file_name
+                            count=count+1
+
+                        total_files = len(file_dict)
+                        with download_progress['lock']:
+                            download_progress['total_files'] = total_files
+
+                        def download_with_progress(url, filename):
+                            download_file(url, filename)
+
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=下载线程数) as executor:
+                            futures = [executor.submit(download_with_progress, url, filename) for url, filename in file_dict.items()]
+                            concurrent.futures.wait(futures)
+
+                        end_time = time.time()
+                        run_time = end_time - start_time
+                        print(f"耗时：{run_time}秒")
+                        print("下好了，开冲！")
+
+                except json.JSONDecodeError:
+                    print(f"错误：重新下载的JSON文件仍然无效")
+                    json_valid = False
+                    # 恢复备份
+                    if os.path.exists(backup_path):
+                        os.rename(backup_path, json_path)
+        except Exception as e2:
+            print(f"重新下载JSON文件失败: {e2}")
+            json_valid = False
+            # 恢复备份
+            if os.path.exists(backup_path):
+                os.rename(backup_path, json_path)
+
+    except Exception as e:
+        print(f"错误：加载资源失败 {json_path}")
+        print(f"详细信息：{e}")
+        json_valid = False
+    finally:
+        # 标记下载完成
+        with download_progress['lock']:
+            download_progress['is_downloading'] = False
+
+        # 只有在JSON有效的情况下才尝试重新加载
+        if json_valid:
+            global jsonfile, commands, json_selected
+            jsonfile = get_json(json_file_name)
+            if jsonfile is not None:
+                commands = get_commands(jsonfile)
+                print(f"重新加载成功: {json_file_name}")
+            else:
+                print(f"重新加载失败: {json_file_name}")
+        else:
+            # JSON文件损坏，显示错误提示
+            with error_message['lock']:
+                error_message['active'] = True
+                error_message['message'] = f"JSON file corrupted: {json_file_name}.json. Please redownload from server."
 
 def get_cover_image(json_name):
     try:
@@ -994,6 +1318,9 @@ if __name__ == '__main__':
     # 进度框实例
     progress_box = None
 
+    # 错误提示框实例
+    error_box = ErrorMessageBox()
+
     while True:
         current_time = time.time()
 
@@ -1034,10 +1361,23 @@ if __name__ == '__main__':
                     load_button.show_button()
                     play_button.show_button()
 
+                # 如果错误提示框激活，显示错误提示框
+                with error_message['lock']:
+                    if error_message['active']:
+                        error_box.show(error_message['message'])
+
                 if event.type == MOUSEBUTTONDOWN and event.button == 1:
                     x = event.pos[0]
                     y = event.pos[1]
                     print(json_list_page)
+
+                    # 检查是否点击了错误提示框的OK按钮
+                    if error_box.active and error_box.is_clicked(x, y):
+                        with error_message['lock']:
+                            error_message['active'] = False
+                            error_message['message'] = ''
+                        error_box.hide()
+                        continue
 
                     for item in json_grid_list:
                         if item.in_rect(x,y):
@@ -1067,12 +1407,13 @@ if __name__ == '__main__':
                                 json_file_name = item.text
                                 jsonfile = get_json(json_file_name)
                                 if jsonfile is None:
+                                    # JSON加载失败，但仍然允许用户点击load按钮重新下载
                                     print(f"无法加载 {json_file_name}，请先点击 'load' 下载资源")
-                                    selected_grid_item.set_selected(False)
-                                    selected_grid_item = None
-                                    continue
-                                commands = get_commands(jsonfile)
-                                json_selected = True
+                                    commands = []
+                                    json_selected = True
+                                else:
+                                    commands = get_commands(jsonfile)
+                                    json_selected = True
                                 print(f"选中: {item.text}")
 
                     if pages_size > 1:
@@ -1117,14 +1458,21 @@ if __name__ == '__main__':
                             download_thread.daemon = True
                             download_thread.start()
                         if play_button.in_rect(x, y):
-                            # 播放时取消选中
-                            if selected_grid_item:
-                                selected_grid_item.set_selected(False)
-                                selected_grid_item = None
-                            is_play = True
-                            json_selected = False
-                            is_main = False
-                            screen.fill((0, 0, 0))
+                            # 检查JSON是否成功加载
+                            if jsonfile is None:
+                                # 显示错误提示，要求先点击load按钮
+                                with error_message['lock']:
+                                    error_message['active'] = True
+                                    error_message['message'] = f"Cannot play. Please click 'load' to download resources first."
+                            else:
+                                # 播放时取消选中
+                                if selected_grid_item:
+                                    selected_grid_item.set_selected(False)
+                                    selected_grid_item = None
+                                is_play = True
+                                json_selected = False
+                                is_main = False
+                                screen.fill((0, 0, 0))
 
             if event.type == QUIT:
                 anime_control.set_loop(False)
