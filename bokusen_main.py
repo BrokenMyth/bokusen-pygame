@@ -136,12 +136,14 @@ pygame.init()
 pygame.mixer.init()
 pygame.display.set_caption("BOKUSEN")
 
-# 菜单 BGM：从 config/bgm 目录取第一首支持的音频；打包成 exe 时用 exe 所在目录，否则用脚本所在目录
+# 菜单 BGM 与收藏配置：打包成 exe 时用 exe 所在目录，否则用脚本所在目录
 if getattr(sys, 'frozen', False):
     _base_dir = os.path.dirname(sys.executable)   # exe 所在目录
 else:
     _base_dir = os.path.dirname(os.path.abspath(__file__))
 _config_bgm_dir = os.path.join(_base_dir, 'config', 'bgm')
+_favorites_path = os.path.join(_base_dir, 'config', 'favorites.json')
+_config_ui_love_path = os.path.join(_base_dir, 'config', 'ui', 'love.png')
 _menu_bgm_sound = None
 _menu_bgm_channel = None
 
@@ -175,8 +177,79 @@ def stop_menu_bgm():
 
 _load_menu_bgm()
 
+# 收藏：仅存数字编号于 config/favorites.json，便于后续扩展（故事 id 转为数字）
+def _story_id_to_num(story_id):
+    """故事 id 转数字编号：纯数字如 "001"->1；否则取首段连续数字如 "story_01"->1。"""
+    s = str(story_id).strip()
+    if s.isdigit():
+        return int(s)
+    m = re.search(r'\d+', s)
+    return int(m.group()) if m else None
+
+def load_favorites():
+    """从 config/favorites.json 加载收藏的数字编号列表，返回 set(int)。文件不存在时先确保 config 目录存在。"""
+    if not os.path.isfile(_favorites_path):
+        try:
+            os.makedirs(os.path.dirname(_favorites_path), exist_ok=True)
+        except Exception as e:
+            print(f'创建收藏配置目录失败: {e}')
+        return set()
+    try:
+        with open(_favorites_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if not isinstance(data, list):
+            return set()
+        return set(int(x) for x in data if isinstance(x, (int, float)) or (isinstance(x, str) and x.strip().isdigit()))
+    except Exception as e:
+        print(f'加载收藏列表失败: {e}')
+        return set()
+
+def save_favorites():
+    """将收藏列表写入 config/favorites.json（只存数字）。若文件/目录不存在则创建。"""
+    global favorites_set
+    try:
+        dir_path = os.path.dirname(_favorites_path)
+        os.makedirs(dir_path, exist_ok=True)
+        with open(_favorites_path, 'w', encoding='utf-8') as f:
+            json.dump(sorted(favorites_set), f, indent=2)
+    except Exception as e:
+        print(f'保存收藏列表失败: {e}')
+
+def is_favorite(story_id):
+    """是否已收藏（按数字编号判断）"""
+    num = _story_id_to_num(story_id)
+    return num is not None and num in favorites_set
+
+def toggle_favorite(story_id):
+    """切换某故事的收藏状态，返回当前是否已收藏。仅支持数字编号故事。"""
+    global favorites_set
+    num = _story_id_to_num(story_id)
+    if num is None:
+        return False
+    if num in favorites_set:
+        favorites_set.discard(num)
+    else:
+        favorites_set.add(num)
+    save_favorites()
+    return num in favorites_set
+
+# 收藏图标：优先 config/ui/love.png，不存在则用 ★（需在 set_mode 之后加载）
+_love_icon_surface = None
+def _load_love_icon():
+    global _love_icon_surface
+    path = os.path.normpath(os.path.abspath(_config_ui_love_path))
+    if os.path.isfile(path):
+        try:
+            _love_icon_surface = pygame.image.load(path).convert_alpha()
+            print(f'收藏图标已加载: {path}')
+        except Exception as e:
+            print(f'加载收藏图标失败: {path} -> {e}')
+    else:
+        print(f'收藏图标文件不存在，将使用 ★: {path}')
+
 
 screen = pygame.display.set_mode(GAME_SIZE, 0, 32)
+_load_love_icon()  # 在 set_mode 之后加载，避免 convert_alpha 异常
 game_font = pygame.font.Font('msgothic.ttc',50)
 text_font = pygame.font.Font('msgothic.ttc',30)
 small_text_font = pygame.font.Font('msgothic.ttc',15)
@@ -1204,12 +1277,13 @@ class GridItem:
     border_color=(100, 100, 100)
     is_selected=False
 
-    def __init__(self, rect, text, cover_img=None, title_height=None):
+    def __init__(self, rect, text, cover_img=None, title_height=None, is_favorite=False):
         self.rect = rect
         self.text = text
         self.cover_img = cover_img
         self.is_selected = False
         self.title_height = title_height if title_height is not None else GRID_TITLE_HEIGHT
+        self.is_favorite = is_favorite
 
     def set_rect(self,r):
         self.rect = r
@@ -1269,6 +1343,20 @@ class GridItem:
         text_rect = text_surface.get_rect(centerx=self.rect[0] + self.rect[2] // 2,
                                           centery=self.rect[1] + self.rect[3] - text_area_height // 2)
         screen.blit(text_surface, text_rect)
+
+        # 收藏图标：右上角，有图用 config/ui/love.png，否则用 ★
+        if self.is_favorite:
+            icon_size = max(14, min(self.rect[2], self.rect[3]) // 5)
+            margin = 4
+            icon_x = self.rect[0] + self.rect[2] - icon_size - margin
+            icon_y = self.rect[1] + margin
+            if _love_icon_surface:
+                scaled = pygame.transform.smoothscale(_love_icon_surface, (icon_size, icon_size))
+                screen.blit(scaled, (icon_x, icon_y))
+            else:
+                star_surf = small_text_font.render('★', True, (255, 200, 100))
+                star_rect = star_surf.get_rect(topright=(self.rect[0] + self.rect[2] - margin, self.rect[1] + margin))
+                screen.blit(star_surf, star_rect)
 
     def in_rect(self, x, y):
         inx = (x>self.rect[0]) and (x<(self.rect[0]+self.rect[2]))
@@ -1375,13 +1463,13 @@ def get_list():
         json_list.append(file.replace('.json',''))
     return json_list
 
-#列表分页 - 每页 ITEMS_PER_PAGE 个项目（5x4网格）
-def page_list(p, page_list):
+#列表分页 - 每页 ITEMS_PER_PAGE 个项目（5x4网格），对传入的列表分页
+def page_list(p, list_to_page):
     new_list = []
-    list_len = len(json_list)
+    list_len = len(list_to_page)
     i = 0
     while (i < ITEMS_PER_PAGE) and (p * ITEMS_PER_PAGE + i < list_len):
-        new_list.append(page_list[p * ITEMS_PER_PAGE + i])
+        new_list.append(list_to_page[p * ITEMS_PER_PAGE + i])
         i = i + 1
     return new_list
 
@@ -1421,7 +1509,8 @@ def load_grid(json_list):
 
         cover_img = get_cover_image(li)
         li_text = li
-        li_item = GridItem(li_rect, li_text, cover_img, title_height=title_height)
+        is_fav = is_favorite(li)
+        li_item = GridItem(li_rect, li_text, cover_img, title_height=title_height, is_favorite=is_fav)
         li_item.show_item()
         grid_list.append(li_item)
 
@@ -1492,7 +1581,12 @@ json_file_name = ""
 jsonfile ={} #get_json(json_file_name)
 commands = []#get_commands(jsonfile)
 json_list = get_list()
-pages_size = math.ceil(len(json_list) / ITEMS_PER_PAGE) if len(json_list) > 0 else 0
+favorites_set = load_favorites()
+def get_display_list():
+    """收藏排在最前，其余按原顺序"""
+    return sorted(json_list, key=lambda x: (not is_favorite(x), x))
+display_list = get_display_list()
+pages_size = math.ceil(len(display_list) / ITEMS_PER_PAGE) if len(display_list) > 0 else 0
 
 
 
@@ -1549,7 +1643,7 @@ page_buttons = []
 
 if __name__ == '__main__':
     # 初始化第一页的网格
-    new_list = page_list(json_list_page, json_list)
+    new_list = page_list(json_list_page, display_list)
     json_grid_list = load_grid(new_list)
     play_menu_bgm()  # 打开游戏时播放菜单 BGM（有则循环，无则跳过）
 
@@ -1603,6 +1697,22 @@ if __name__ == '__main__':
                 with error_message['lock']:
                     if error_message['active']:
                         error_box.show(error_message['message'])
+
+                # 右键：收藏/取消收藏当前故事
+                if event.type == MOUSEBUTTONDOWN and event.button == 3:
+                    x, y = event.pos[0], event.pos[1]
+                    for item in json_grid_list:
+                        if item.in_rect(x, y):
+                            toggle_favorite(item.text)
+                            display_list = get_display_list()
+                            pages_size = math.ceil(len(display_list) / ITEMS_PER_PAGE) if len(display_list) > 0 else 0
+                            if pages_size > 0 and json_list_page >= pages_size:
+                                json_list_page = pages_size - 1
+                            new_list = page_list(json_list_page, display_list)
+                            json_grid_list = load_grid(new_list)
+                            selected_grid_item = None
+                            json_selected = False
+                            break
 
                 if event.type == MOUSEBUTTONDOWN and event.button == 1:
                     x = event.pos[0]
@@ -1696,7 +1806,7 @@ if __name__ == '__main__':
                                 selected_grid_item.set_selected(False)
                                 selected_grid_item = None
                             json_selected = False
-                            new_list = page_list(json_list_page,json_list)
+                            new_list = page_list(json_list_page, display_list)
                             json_grid_list = load_grid(new_list)
 
                         if pages_down_button.in_rect(x,y):
@@ -1708,7 +1818,7 @@ if __name__ == '__main__':
                                 selected_grid_item.set_selected(False)
                                 selected_grid_item = None
                             json_selected = False
-                            new_list = page_list(json_list_page,json_list)
+                            new_list = page_list(json_list_page, display_list)
                             json_grid_list = load_grid(new_list)
 
                         if 'page_buttons' in locals():
@@ -1720,7 +1830,7 @@ if __name__ == '__main__':
                                         selected_grid_item.set_selected(False)
                                         selected_grid_item = None
                                     json_selected = False
-                                    new_list = page_list(json_list_page,json_list)
+                                    new_list = page_list(json_list_page, display_list)
                                     json_grid_list = load_grid(new_list)
 
                     # 处理load和play按钮的点击
@@ -1838,12 +1948,16 @@ if __name__ == '__main__':
                 progress_box.hide()
                 progress_box = None
 
-            # 检查是否需要刷新网格列表
+            # 检查是否需要刷新网格列表（如下载完成后）
             with need_refresh_grid['lock']:
                 if need_refresh_grid['refresh']:
                     need_refresh_grid['refresh'] = False
-                    # 重新加载当前页的网格列表
-                    new_list = page_list(json_list_page, json_list)
+                    json_list = get_list()
+                    display_list = get_display_list()
+                    pages_size = math.ceil(len(display_list) / ITEMS_PER_PAGE) if len(display_list) > 0 else 0
+                    if pages_size > 0 and json_list_page >= pages_size:
+                        json_list_page = pages_size - 1
+                    new_list = page_list(json_list_page, display_list)
                     json_grid_list = load_grid(new_list)
                     print("网格列表已刷新")
 
