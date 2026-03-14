@@ -117,6 +117,17 @@ WHITE = (255, 255, 255)
 RED = (255, 0, 0)    
 GAME_SIZE = (display_width,display_height)
 CG_SIZE = (960,540)
+# 网格列表：格子高度 = 图片等比缩放高度 + 标题高度
+GRID_TITLE_HEIGHT = 25
+COVER_ASPECT_RATIO = 960 / 540
+# 分页栏顶部 y，网格需整体缩放到此线之上
+PAGE_BAR_Y = 600
+GRID_TOP_MARGIN = 30
+GRID_BOTTOM_MARGIN = 20  # 网格底部与分页栏的间距
+# 网格横排个数与行数，每页数量
+GRID_COLS = 5
+GRID_ROWS = 4
+ITEMS_PER_PAGE = GRID_COLS * GRID_ROWS  # 20
 
 
 
@@ -124,6 +135,42 @@ CG_SIZE = (960,540)
 pygame.init()
 pygame.mixer.init()
 pygame.display.set_caption("BOKUSEN")
+
+# 菜单 BGM：从 config/bgm 目录取第一首支持的音频，打开游戏播放，进入场景停止，退出场景继续循环
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_config_bgm_dir = os.path.join(_script_dir, 'config', 'bgm')
+_menu_bgm_sound = None
+_menu_bgm_channel = None
+
+def _load_menu_bgm():
+    """加载 config/bgm 下第一首 .ogg/.wav/.mp3，无文件则返回 None"""
+    global _menu_bgm_sound, _menu_bgm_channel
+    _menu_bgm_channel = pygame.mixer.Channel(3)
+    _menu_bgm_channel.set_volume(bgm音量)
+    if not os.path.isdir(_config_bgm_dir):
+        return
+    exts = ('.ogg', '.wav', '.mp3')
+    for f in sorted(os.listdir(_config_bgm_dir)):
+        if any(f.lower().endswith(ext) for ext in exts):
+            path = os.path.join(_config_bgm_dir, f)
+            try:
+                _menu_bgm_sound = pygame.mixer.Sound(path)
+                return
+            except Exception as e:
+                print(f'菜单 BGM 加载失败: {path} -> {e}')
+    return
+
+def play_menu_bgm():
+    """播放菜单 BGM（循环），无则跳过"""
+    if _menu_bgm_sound and _menu_bgm_channel:
+        _menu_bgm_channel.play(_menu_bgm_sound, loops=-1)
+
+def stop_menu_bgm():
+    """停止菜单 BGM（进入场景时调用）"""
+    if _menu_bgm_channel:
+        _menu_bgm_channel.stop()
+
+_load_menu_bgm()
 
 
 screen = pygame.display.set_mode(GAME_SIZE, 0, 32)
@@ -235,6 +282,7 @@ def read_commands(jsonfile,num):
             is_play = False
             is_main = True
             json_selected = False
+            play_menu_bgm()  # 退出场景，继续播放菜单 BGM
             screen.fill((0,0,0))
 
 
@@ -266,6 +314,7 @@ def execut_commands(tag,param):
                 is_main = True
                 is_fast_forward = False
                 fast_forward_mode = False
+                play_menu_bgm()
                 return "stop"
 
             if image_order == "fore":
@@ -328,6 +377,7 @@ def execut_commands(tag,param):
                 is_main = True
                 is_fast_forward = False
                 fast_forward_mode = False
+                play_menu_bgm()
                 return "stop"
 
     if tag=="articles":
@@ -406,6 +456,7 @@ def execut_commands(tag,param):
                 is_main = True
                 is_fast_forward = False
                 fast_forward_mode = False
+                play_menu_bgm()
                 return "stop"
 
         
@@ -453,6 +504,7 @@ def execut_commands(tag,param):
                 is_main = True
                 is_fast_forward = False
                 fast_forward_mode = False
+                play_menu_bgm()
                 return "stop"
 
     if tag=="fadeoutbgm":
@@ -1149,11 +1201,12 @@ class GridItem:
     border_color=(100, 100, 100)
     is_selected=False
 
-    def __init__(self, rect, text, cover_img=None):
+    def __init__(self, rect, text, cover_img=None, title_height=None):
         self.rect = rect
         self.text = text
         self.cover_img = cover_img
         self.is_selected = False
+        self.title_height = title_height if title_height is not None else GRID_TITLE_HEIGHT
 
     def set_rect(self,r):
         self.rect = r
@@ -1168,11 +1221,12 @@ class GridItem:
         self.is_selected = selected
 
     def show_item(self):
-        self.is_item_on_screen= True
+        self.is_item_on_screen = True
 
-        bg_rect = (self.rect[0]-2, self.rect[1]-2, self.rect[2]+4, self.rect[3]+4)
+        # 边框矩形（外扩 2px 便于显示边框）
+        bg_rect = (self.rect[0] - 2, self.rect[1] - 2, self.rect[2] + 4, self.rect[3] + 4)
 
-        # 根据选中状态改变颜色
+        # 先画背景与边框（选中时高亮边框）
         if self.is_selected:
             pygame.draw.rect(screen, (80, 80, 120), bg_rect, 0)
             pygame.draw.rect(screen, (100, 150, 255), bg_rect, 3)
@@ -1180,38 +1234,37 @@ class GridItem:
             pygame.draw.rect(screen, self.bg_color, bg_rect, 0)
             pygame.draw.rect(screen, self.border_color, bg_rect, 2)
 
-        text_area_height = 25
+        # 底部标题区域高度，其余为图片区域（缩放时由 load_grid 传入）
+        text_area_height = self.title_height
+        img_area_width = self.rect[2]
         img_area_height = self.rect[3] - text_area_height
+        img_area_rect = pygame.Rect(self.rect[0], self.rect[1], img_area_width, img_area_height)
 
         if self.cover_img:
-            aspect_ratio = 960 / 540
-            img_width = int(img_area_height * aspect_ratio)
-
-            if img_width > self.rect[2]:
-                img_width = self.rect[2]
-                img_height = int(img_width / aspect_ratio)
-            else:
-                img_height = img_area_height
-
-            scaled_img = pygame.transform.scale(self.cover_img, (img_width, img_height))
-            img_x = self.rect[0] + (self.rect[2] - img_width) // 2
-            img_y = self.rect[1]
-            screen.blit(scaled_img, (img_x, img_y))
+            # 等比缩放并填满图片区域（cover：完全覆盖，不留黑边）
+            src_w, src_h = self.cover_img.get_size()
+            aspect_ratio = src_w / src_h
+            scale_w = img_area_width / src_w
+            scale_h = img_area_height / src_h
+            scale = max(scale_w, scale_h)  # 取较大比例确保填满
+            scaled_w = int(src_w * scale)
+            scaled_h = int(src_h * scale)
+            scaled_img = pygame.transform.smoothscale(self.cover_img, (scaled_w, scaled_h))
+            # 居中裁剪：多出的部分从中心裁掉
+            blit_x = self.rect[0] - (scaled_w - img_area_width) // 2
+            blit_y = self.rect[1] - (scaled_h - img_area_height) // 2
+            # 限制绘制在图片区域内，避免画到标题或框外
+            screen.set_clip(img_area_rect)
+            screen.blit(scaled_img, (blit_x, blit_y))
+            screen.set_clip(None)
         else:
-            img_width = int(img_area_height * (960 / 540))
-            if img_width > self.rect[2]:
-                img_width = self.rect[2]
-                img_height = int(img_width / (960 / 540))
-            else:
-                img_height = img_area_height
+            # 无封面时用深色块占满图片区域
+            pygame.draw.rect(screen, (30, 30, 30), img_area_rect, 0)
 
-            img_x = self.rect[0] + (self.rect[2] - img_width) // 2
-            img_rect = pygame.Rect(img_x, self.rect[1], img_width, img_height)
-            pygame.draw.rect(screen, (30, 30, 30), img_rect, 0)
-
+        # 底部标题
         text_surface = small_text_font.render(self.text, True, self.text_color)
         text_rect = text_surface.get_rect(centerx=self.rect[0] + self.rect[2] // 2,
-                                        centery=self.rect[1] + self.rect[3] - text_area_height // 2)
+                                          centery=self.rect[1] + self.rect[3] - text_area_height // 2)
         screen.blit(text_surface, text_rect)
 
     def in_rect(self, x, y):
@@ -1319,28 +1372,40 @@ def get_list():
         json_list.append(file.replace('.json',''))
     return json_list
 
-#列表分页 - 改为每页12个项目（3x4网格）
-def page_list(p,page_list):
-    new_list=[]
+#列表分页 - 每页 ITEMS_PER_PAGE 个项目（5x4网格）
+def page_list(p, page_list):
+    new_list = []
     list_len = len(json_list)
-    i=0
-    while (i<12) and (p*12+i <list_len):
-        new_list.append(page_list[p*12+i])
-        i= i+1
+    i = 0
+    while (i < ITEMS_PER_PAGE) and (p * ITEMS_PER_PAGE + i < list_len):
+        new_list.append(page_list[p * ITEMS_PER_PAGE + i])
+        i = i + 1
     return new_list
 
-#显示网格列表 - 3x4网格布局（适配1280x720）
+#显示网格列表 - 5x4网格布局，整体等比缩放到分页栏之上
 def load_grid(json_list):
-    grid_cols = 3
-    grid_rows = 4
+    grid_cols = GRID_COLS
+    grid_rows = GRID_ROWS
     item_width = 350
-    item_height = 130
+    img_height = int(item_width / COVER_ASPECT_RATIO)
+    item_height = img_height + GRID_TITLE_HEIGHT
     gap_x = 30
     gap_y = 15
 
+    # 可用高度：分页栏上方留出间距
+    available_height = PAGE_BAR_Y - GRID_TOP_MARGIN - GRID_BOTTOM_MARGIN
+    grid_content_height = grid_rows * item_height + (grid_rows - 1) * gap_y
+    scale = min(1.0, available_height / grid_content_height) if grid_content_height > 0 else 1.0
+
+    item_width = int(item_width * scale)
+    item_height = int(item_height * scale)
+    gap_x = int(gap_x * scale)
+    gap_y = int(gap_y * scale)
+    title_height = max(12, int(GRID_TITLE_HEIGHT * scale))
+
     grid_total_width = grid_cols * item_width + (grid_cols - 1) * gap_x
     start_x = (display_width - grid_total_width) // 2
-    start_y = 30
+    start_y = GRID_TOP_MARGIN
 
     grid_list = []
     for idx, li in enumerate(json_list):
@@ -1353,7 +1418,7 @@ def load_grid(json_list):
 
         cover_img = get_cover_image(li)
         li_text = li
-        li_item = GridItem(li_rect, li_text, cover_img)
+        li_item = GridItem(li_rect, li_text, cover_img, title_height=title_height)
         li_item.show_item()
         grid_list.append(li_item)
 
@@ -1385,7 +1450,7 @@ def show_page_info(current_page, total_pages):
 
     total_width = len(pages_to_show) * (button_width + button_gap)
     start_x = (display_width - total_width) // 2
-    page_y = 600
+    page_y = PAGE_BAR_Y
 
     idx = 0
     for i in pages_to_show:
@@ -1424,7 +1489,7 @@ json_file_name = ""
 jsonfile ={} #get_json(json_file_name)
 commands = []#get_commands(jsonfile)
 json_list = get_list()
-pages_size = math.ceil(len(json_list)/12)
+pages_size = math.ceil(len(json_list) / ITEMS_PER_PAGE) if len(json_list) > 0 else 0
 
 
 
@@ -1449,7 +1514,7 @@ fast_forward_commands_per_second = 20  # 每秒播放的命令数
 fast_forward_mode = False  # 标记是否处于快进模式
 last_command_time = 0  # 上次执行命令的时间
 
-buttons_start_y = 600
+buttons_start_y = PAGE_BAR_Y
 button_width = 80
 button_height = 25
 button_gap = 10
@@ -1481,8 +1546,9 @@ page_buttons = []
 
 if __name__ == '__main__':
     # 初始化第一页的网格
-    new_list = page_list(json_list_page,json_list)
+    new_list = page_list(json_list_page, json_list)
     json_grid_list = load_grid(new_list)
+    play_menu_bgm()  # 打开游戏时播放菜单 BGM（有则循环，无则跳过）
 
     # 进度框实例
     progress_box = None
@@ -1590,6 +1656,7 @@ if __name__ == '__main__':
 
                                 commands = get_commands(jsonfile)
 
+                                stop_menu_bgm()
                                 is_play = True
                                 json_selected = False
                                 is_main = False
@@ -1691,10 +1758,10 @@ if __name__ == '__main__':
                                                 error_message['message'] = f"Please click 'load' to download."
                                         else:
                                             # 资源存在，开始播放
-                                            # 播放时取消选中
                                             if selected_grid_item:
                                                 selected_grid_item.set_selected(False)
                                                 selected_grid_item = None
+                                            stop_menu_bgm()
                                             is_play = True
                                             json_selected = False
                                             is_main = False
@@ -1711,6 +1778,7 @@ if __name__ == '__main__':
                     anime_control.join()
                 se_channel.stop()  # 停止音效
                 bgm_channel.stop()  # 停止 BGM
+                stop_menu_bgm()
                 exit()
 
         # 快进逻辑
