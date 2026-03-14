@@ -1785,6 +1785,43 @@ if __name__ == '__main__':
                             json_selected = False
                             break
 
+                # 鼠标滚轮：上滚 分页-1，下滚 分页+1
+                if event.type == pygame.MOUSEWHEEL and pages_size > 1:
+                    if event.y > 0:
+                        json_list_page = json_list_page - 1
+                        if json_list_page < 0:
+                            json_list_page = pages_size - 1
+                        if selected_grid_item:
+                            selected_grid_item.set_selected(False)
+                            selected_grid_item = None
+                        json_selected = False
+                        new_list = page_list(json_list_page, display_list)
+                        json_grid_list = load_grid(new_list)
+                    elif event.y < 0:
+                        json_list_page = json_list_page + 1
+                        if json_list_page >= pages_size:
+                            json_list_page = 0
+                        if selected_grid_item:
+                            selected_grid_item.set_selected(False)
+                            selected_grid_item = None
+                        json_selected = False
+                        new_list = page_list(json_list_page, display_list)
+                        json_grid_list = load_grid(new_list)
+                    # 滚轮改页后本帧已按旧状态画过，补画一次使分页栏与网格与 json_list_page 同步
+                    screen.fill((0, 0, 0))
+                    for item in json_grid_list:
+                        item.show_item()
+                    if pages_size > 1:
+                        pages_up_button.show_button()
+                        pages_down_button.show_button()
+                        page_buttons = show_page_info(json_list_page, pages_size)
+                    if json_selected:
+                        load_button.show_button()
+                        play_button.show_button()
+                    with error_message['lock']:
+                        if error_message['active']:
+                            error_box.show(error_message['message'])
+
                 if event.type == MOUSEBUTTONDOWN and event.button == 1:
                     x = event.pos[0]
                     y = event.pos[1]
