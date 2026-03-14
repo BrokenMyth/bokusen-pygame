@@ -1653,9 +1653,18 @@ current_story_id = None
 current_translation_cache = {}
 json_list = get_list()
 favorites_set = load_favorites()
+
+def get_character_name(item):
+    """从条目名提取角色名用于排序：同名排在一起。【】内不是人名，-初H 不是，去掉后剩余为人名。"""
+    s = re.sub(r'【[^】]*】', '', item)
+    s = s.replace('- 初H', '').replace('-初H', '')
+    s = re.sub(r'^\d+\s*', '', s)
+    return (s.strip() or item)
+
 def get_display_list():
-    """收藏排在最前，其余按原顺序"""
-    return sorted(json_list, key=lambda x: (not is_favorite(x), x))
+    """收藏排在最前，其次按角色名分组（同名放一起），组内按条目名"""
+    return sorted(json_list, key=lambda x: (not is_favorite(x), get_character_name(x), x))
+
 display_list = get_display_list()
 pages_size = math.ceil(len(display_list) / ITEMS_PER_PAGE) if len(display_list) > 0 else 0
 
