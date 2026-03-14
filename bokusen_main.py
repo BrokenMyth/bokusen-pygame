@@ -136,9 +136,12 @@ pygame.init()
 pygame.mixer.init()
 pygame.display.set_caption("BOKUSEN")
 
-# 菜单 BGM：从 config/bgm 目录取第一首支持的音频，打开游戏播放，进入场景停止，退出场景继续循环
-_script_dir = os.path.dirname(os.path.abspath(__file__))
-_config_bgm_dir = os.path.join(_script_dir, 'config', 'bgm')
+# 菜单 BGM：从 config/bgm 目录取第一首支持的音频；打包成 exe 时用 exe 所在目录，否则用脚本所在目录
+if getattr(sys, 'frozen', False):
+    _base_dir = os.path.dirname(sys.executable)   # exe 所在目录
+else:
+    _base_dir = os.path.dirname(os.path.abspath(__file__))
+_config_bgm_dir = os.path.join(_base_dir, 'config', 'bgm')
 _menu_bgm_sound = None
 _menu_bgm_channel = None
 
