@@ -104,6 +104,14 @@ def convert_audio_no_window(input_file, output_file):
 #用户设置
 user_setting_file =  open("settings.json",'r',encoding='utf8') 
 user_setting = json.load(user_setting_file)
+user_setting_file.close()
+if '语言' not in user_setting:
+    user_setting['语言'] = 1
+    try:
+        with open("settings.json", 'w', encoding='utf-8') as f:
+            json.dump(user_setting, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f'自动写入 settings.json 语言字段失败: {e}')
 user_name = user_setting['user']['name']
 下载线程数 = user_setting['下载线程数']
 print('----用户设置，请到setting.json中修改------')
@@ -113,6 +121,8 @@ print('----------------------------------------')
 display_width = user_setting['窗口宽度']
 display_height = user_setting['窗口高度']
 bgm音量 = int(user_setting['bgm音量'].replace("%",''))*0.01
+# 语言：0=原文，1=优先显示译文（无译文则显示原文）
+语言 = int(user_setting.get('语言', 1))
 WHITE = (255, 255, 255)
 RED = (255, 0, 0)    
 GAME_SIZE = (display_width,display_height)
@@ -141,6 +151,8 @@ if getattr(sys, 'frozen', False):
     _base_dir = os.path.dirname(sys.executable)   # exe 所在目录
 else:
     _base_dir = os.path.dirname(os.path.abspath(__file__))
+# 译文目录：与 exe/脚本同级的 translation/out（translation 已移入本项目）
+_translation_out_dir = os.path.join(_base_dir, 'translation', 'out')
 _config_bgm_dir = os.path.join(_base_dir, 'config', 'bgm')
 _favorites_path = os.path.join(_base_dir, 'config', 'favorites.json')
 _config_ui_love_path = os.path.join(_base_dir, 'config', 'ui', 'love.png')
@@ -250,10 +262,36 @@ def _load_love_icon():
 
 screen = pygame.display.set_mode(GAME_SIZE, 0, 32)
 _load_love_icon()  # 在 set_mode 之后加载，避免 convert_alpha 异常
-game_font = pygame.font.Font('msgothic.ttc',50)
-text_font = pygame.font.Font('msgothic.ttc',30)
-small_text_font = pygame.font.Font('msgothic.ttc',15)
-button_font = pygame.font.Font('msgothic.ttc',15)
+
+def _font_path(name):
+    """字体文件路径：优先从运行目录/脚本目录找"""
+    p = os.path.join(_base_dir, name)
+    return p if os.path.isfile(p) else name
+
+def _get_cjk_font(size):
+    """优先使用支持中文（CJK）的字体，避免译文显示为方框。先试系统字体，再回退到 msgothic。"""
+    cjk_names = [
+        'microsoftyahei', 'Microsoft YaHei', 'msyh',
+        'simhei', 'SimHei', 'simsun', 'SimSun',
+        'Microsoft JhengHei', 'KaiTi', 'FangSong', 'DengXian',
+    ]
+    for font_name in cjk_names:
+        try:
+            f = pygame.font.SysFont(font_name, size)
+            if f and f.size('中')[0] > 0:
+                return f
+        except Exception:
+            continue
+    ttc = _font_path('msgothic.ttc')
+    try:
+        return pygame.font.Font(ttc, size)
+    except Exception:
+        return pygame.font.SysFont(None, size)
+
+game_font = _get_cjk_font(50)
+text_font = _get_cjk_font(30)
+small_text_font = _get_cjk_font(15)
+button_font = _get_cjk_font(15)
 all_text_rect = pygame.Rect(30, 550, 930, 200)
 
 
@@ -294,6 +332,19 @@ def get_json(json_file_name):
                     error_message['message'] = f"File content is empty: {json_file_name}.json"
                 return None
             bokujson = json.loads(content)
+            # 加载对应剧本的译文缓存（translation/out/{剧本id}.json），用于语言=1 时实时替换
+            global current_story_id, current_translation_cache
+            current_story_id = json_file_name
+            current_translation_cache = {}
+            trans_path = os.path.join(_translation_out_dir, json_file_name + '.json')
+            if os.path.isfile(trans_path):
+                try:
+                    with open(trans_path, 'r', encoding='utf-8') as tf:
+                        current_translation_cache = json.load(tf)
+                    if not isinstance(current_translation_cache, dict):
+                        current_translation_cache = {}
+                except Exception:
+                    current_translation_cache = {}
             return bokujson
     except json.JSONDecodeError as e:
         print(f"错误：JSON 格式错误 {json_path}")
@@ -671,11 +722,29 @@ def get_sounds(num):
 
     return None
 
+def _trim_translation_key(s):
+    """与 translation 脚本一致：原文 trim 后再查译文 key。"""
+    if not isinstance(s, str):
+        return s
+    s = s.strip()
+    while s and s[0] in "\ufeff\u200b\u200c\u200d\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u00a0":
+        s = s[1:]
+    while s and s[-1] in "\ufeff\u200b\u200c\u200d\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u00a0":
+        s = s[:-1]
+    return s
+
 def get_articles(num):    
-    global jsonfile
+    global jsonfile, 语言, current_translation_cache
     bokujson = jsonfile
     articles = bokujson['data']['code']['articles']
-    return articles[int(num)]
+    txt = articles[int(num)]
+    if 语言 == 1 and current_translation_cache:
+        key = _trim_translation_key(txt)
+        if key and key in current_translation_cache:
+            return current_translation_cache[key]
+        if txt in current_translation_cache:
+            return current_translation_cache[txt]
+    return txt
 
 
 # 全局下载进度变量
@@ -1580,6 +1649,8 @@ def show_page_info(current_page, total_pages):
 json_file_name = ""
 jsonfile ={} #get_json(json_file_name)
 commands = []#get_commands(jsonfile)
+current_story_id = None
+current_translation_cache = {}
 json_list = get_list()
 favorites_set = load_favorites()
 def get_display_list():
